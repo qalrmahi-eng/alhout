@@ -4,5 +4,4 @@
 
 لا يُوثق `paid_installments` القديم كمصدر للحساب؛ يعاد اشتقاقه من مجموع الدفعات ذات الحالة `active`. الدفعات القديمة التي لا تحمل `status` تعامل `active`. لا توجد غرامة تأخير.
 
-قبل التنفيذ المادي، ينشئ `upgradeSheets({ dryRun: false })` أوراق Backup مؤرخة ويسجل خطة التغيير في `migration_report`. راجع [دليل Apps Script](../google-apps-script/README.md) للتشغيل والنشر والرجوع.
-
+قبل التنفيذ المادي، تنشئ `applySheetsUpgrade()` أوراق Backup مؤرخة وتسجل خطة التغيير في `migration_report`. استخدم `upgradeSheets()` أولًا لمعاينة الخطة دون كتابة. راجع [دليل Apps Script](../google-apps-script/README.md) للتشغيل والنشر والرجوع.

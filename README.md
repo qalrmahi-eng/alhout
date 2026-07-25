@@ -73,10 +73,10 @@ APP_TIMEZONE=Asia/Baghdad
 upgradeSheets() // dry run افتراضي
 ```
 
-وبعد مراجعة الخطة وعلى نسخة تجريبية:
+وبعد مراجعة الخطة وعلى نسخة تجريبية، استخدم دالة التطبيق الرسمية:
 
 ```js
-upgradeSheets({ dryRun: false })
+applySheetsUpgrade()
 ```
 
 تحافظ الترقية على الأعمدة القديمة وترتيبها، وتضيف الناقص إلى اليمين فقط، وتنشئ أوراق Backup مؤرخة وتقرير `migration_report`. التفاصيل في [docs/MIGRATION.md](docs/MIGRATION.md).

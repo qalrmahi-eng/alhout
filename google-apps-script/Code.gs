@@ -132,7 +132,9 @@ function upgradeSheets(options) {
       return;
     }
     var headers = readHeaders_(sheet);
-    var missing = desired.filter(function (header) { return headers.indexOf(header) === -1; });
+    var missing = desired.filter(function (header) {
+      return headers.indexOf(canonicalHeader_(header)) === -1;
+    });
     plan.push({ sheet: name, action: missing.length ? 'append_headers' : 'none', headers: missing });
   });
 
@@ -178,6 +180,10 @@ function upgradeSheets(options) {
     JSON.stringify(plan)
   ]);
   return { ok: true, dry_run: false, backups: backupNames, plan: plan };
+}
+
+function applySheetsUpgrade() {
+  return upgradeSheets({ dryRun: false });
 }
 
 function getSettings_() {
@@ -492,35 +498,101 @@ function dueDate_(firstDue, index, frequency) {
   return Utilities.formatDate(new Date(Date.UTC(year, month, Math.min(first.getUTCDate(), lastDay))), 'UTC', 'yyyy-MM-dd');
 }
 
+/**
+ * يحول العنوان إلى مفتاح داخلي ثابت دون تعديل الخلية الأصلية.
+ * يتعامل مع BOM وNBSP والمحارف صفرية العرض وعلامات الاتجاه وحالة الأحرف.
+ */
+function canonicalHeader_(header) {
+  var value = header === null || header === undefined ? '' : String(header);
+  if (value.normalize) value = value.normalize('NFKC');
+  return value
+    .replace(/[\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g, '')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function inspectHeaders_(rawHeaders, sheetName) {
+  var canonical = rawHeaders.map(canonicalHeader_);
+  var firstPosition = Object.create(null);
+  var duplicates = [];
+
+  canonical.forEach(function (header, index) {
+    if (!header) return;
+    if (firstPosition[header] !== undefined) {
+      duplicates.push({
+        header: header,
+        first: firstPosition[header] + 1,
+        duplicate: index + 1
+      });
+      return;
+    }
+    firstPosition[header] = index;
+  });
+
+  if (duplicates.length) {
+    var details = duplicates.map(function (item) {
+      return '"' + item.header + '" في العمودين ' + item.first + ' و' + item.duplicate;
+    }).join('؛ ');
+    throw new Error(
+      'عناوين مكررة بعد التطبيع في ورقة "' + sheetName + '": ' + details +
+      '. أوقف الترقية وصحح العناوين المكررة يدوياً قبل المحاولة.'
+    );
+  }
+
+  return { raw: rawHeaders, canonical: canonical };
+}
+
+function canonicalObject_(object) {
+  var result = Object.create(null);
+  Object.keys(object || {}).forEach(function (key) {
+    var canonical = canonicalHeader_(key);
+    if (canonical) result[canonical] = object[key];
+  });
+  return result;
+}
+
 function readTable_(name) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
   if (!sheet) throw new Error('الجدول ' + name + ' غير موجود. شغّل upgradeSheets أولاً');
   var values = sheet.getDataRange().getValues();
-  var headers = (values[0] || []).map(String);
+  var inspected = inspectHeaders_((values[0] || []).map(String), name);
+  var headers = inspected.canonical;
   var rows = values.slice(1).map(function (valuesRow) {
     var object = {};
-    headers.forEach(function (header, index) { object[header] = valuesRow[index]; });
+    headers.forEach(function (header, index) {
+      if (header) object[header] = valuesRow[index];
+    });
     return object;
   });
-  return { sheet: sheet, headers: headers, rows: rows };
+  return {
+    sheet: sheet,
+    headers: headers,
+    rawHeaders: inspected.raw,
+    rows: rows
+  };
 }
 
 function readHeaders_(sheet) {
   if (sheet.getLastColumn() === 0) return [];
-  return sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  var raw = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  return inspectHeaders_(raw, sheet.getName ? sheet.getName() : 'غير معروفة').canonical;
 }
 
 function appendObject_(name, object) {
   var table = readTable_(name);
+  var canonicalObject = canonicalObject_(object);
   table.sheet.appendRow(table.headers.map(function (header) {
-    return object[header] === undefined ? '' : object[header];
+    return !header || canonicalObject[header] === undefined ? '' : canonicalObject[header];
   }));
 }
 
 function writeObjectRow_(table, rowNumber, object) {
+  var canonicalObject = canonicalObject_(object);
   table.sheet.getRange(rowNumber, 1, 1, table.headers.length).setValues([
     table.headers.map(function (header) {
-      return object[header] === undefined ? '' : object[header];
+      return !header || canonicalObject[header] === undefined ? '' : canonicalObject[header];
     })
   ]);
 }
