@@ -1,145 +1,37 @@
-const API_URL = '/api/sheets';
+import type { ApiResponse, Customer, Payment, Settings } from '@/types/domain';
 
-export async function getSettings() {
-  const res = await fetch(`${API_URL}?action=settings`, {
+async function request<T>(
+  action: string,
+  data: Record<string, unknown> = {},
+): Promise<T> {
+  const response = await fetch('/api/sheets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, data }),
     cache: 'no-store',
   });
-  return res.json();
+  const payload = (await response.json()) as ApiResponse<T>;
+  if (response.status === 401 && typeof window !== 'undefined') {
+    window.location.assign('/login');
+  }
+  if (!response.ok || !payload.ok) throw new Error(payload.message || 'تعذر إكمال العملية');
+  return payload.data as T;
 }
 
-export async function getCustomers() {
-  const res = await fetch(`${API_URL}?action=customers`, {
-    cache: 'no-store',
+export const getSettings = () => request<Settings>('settings');
+export const getCustomers = () => request<Customer[]>('customers');
+export const getPayments = () => request<Payment[]>('payments');
+export const addCustomer = (data: Record<string, unknown>) => request<Customer>('add_customer', data);
+export const updateCustomer = (data: Record<string, unknown>) => request<Customer>('update_customer', data);
+export const archiveCustomer = (customerId: number) =>
+  request<Customer>('archive_customer', { customer_id: customerId });
+export const restoreCustomer = (customerId: number) =>
+  request<Customer>('restore_customer', { customer_id: customerId });
+export const addPayment = (data: Record<string, unknown>) => request<Payment>('add_payment', data);
+export const cancelPayment = (paymentId: number, cancellationReason: string) =>
+  request<Payment>('cancel_payment', {
+    payment_id: paymentId,
+    cancellation_reason: cancellationReason,
   });
-  return res.json();
-}
-
-export async function getPayments() {
-  const res = await fetch(`${API_URL}?action=payments`, {
-    cache: 'no-store',
-  });
-  return res.json();
-}
-
-export async function addCustomer(data: {
-  name: string;
-  phone: string;
-  principal: number;
-  profit_percent: number;
-  installments: number;
-  paid_installments?: number;
-  start_date: string;
-  notes?: string;
-  status?: string;
-}) {
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/plain;charset=utf-8',
-    },
-    body: JSON.stringify({
-      action: 'add_customer',
-      data,
-    }),
-  });
-
-  return res.json();
-}
-
-export async function updateCustomer(data: {
-  customer_id: number;
-  name: string;
-  phone: string;
-  principal: number;
-  profit_percent: number;
-  installments: number;
-  start_date: string;
-  notes?: string;
-  status?: string;
-}) {
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/plain;charset=utf-8',
-    },
-    body: JSON.stringify({
-      action: 'update_customer',
-      data,
-    }),
-  });
-
-  return res.json();
-}
-
-export async function addPayment(data: {
-  customer_id: number;
-  amount: number;
-  payment_date?: string;
-  notes?: string;
-}) {
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/plain;charset=utf-8',
-    },
-    body: JSON.stringify({
-      action: 'add_payment',
-      data,
-    }),
-  });
-
-  return res.json();
-}
-
-export async function deletePayment(data: {
-  payment_id: number;
-}) {
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/plain;charset=utf-8',
-    },
-    body: JSON.stringify({
-      action: 'delete_payment',
-      data,
-    }),
-  });
-
-  return res.json();
-}
-
-export async function deleteCustomer(data: {
-  customer_id: number;
-}) {
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/plain;charset=utf-8',
-    },
-    body: JSON.stringify({
-      action: 'delete_customer',
-      data,
-    }),
-  });
-
-  return res.json();
-}
-
-export async function updateSettings(data: {
-  system_name: string;
-  capital: number;
-  default_profit_percent: number;
-}) {
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'text/plain;charset=utf-8',
-    },
-    body: JSON.stringify({
-      action: 'update_settings',
-      data,
-    }),
-  });
-
-  return res.json();
-}
+export const updateSettings = (data: Record<string, unknown>) =>
+  request<Settings>('update_settings', data);
