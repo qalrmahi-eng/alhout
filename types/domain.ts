@@ -10,6 +10,7 @@ export interface Settings {
   default_profit_percent: number;
   default_installment_type?: InstallmentFrequency;
   receipt_footer?: string;
+  updated_at?: string;
 }
 
 export interface Customer {
@@ -30,11 +31,17 @@ export interface Customer {
   expected_end_date?: string;
   installment_value?: number;
   paid_installments?: number;
+  paid_amount?: number;
+  remaining_amount?: number;
+  current_installment_paid?: number;
+  current_installment_remaining?: number;
+  next_due_date?: string;
   start_date?: string;
   notes?: string;
   status?: string;
   created_at?: string;
   archived?: boolean | string;
+  updated_at?: string;
 }
 
 export interface Payment {
@@ -49,6 +56,7 @@ export interface Payment {
   status?: PaymentStatus;
   cancellation_reason?: string;
   cancelled_at?: string;
+  updated_at?: string;
 }
 
 export interface InstallmentRow {
@@ -82,4 +90,3 @@ export interface ApiResponse<T = unknown> {
   code?: string;
   tracking_id?: string;
 }
-

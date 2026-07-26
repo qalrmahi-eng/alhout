@@ -44,6 +44,8 @@ import {
   addPayment,
   archiveCustomer,
   cancelPayment,
+  customerAvatar,
+  customerMatchesSearch,
   getCustomers,
   getPayments,
   getSettings,
@@ -163,8 +165,7 @@ export default function DashboardApp({ username }: { username: string }) {
     return customerViews.filter((customer) => {
       const matchesSearch =
         !normalized ||
-        customer.name.toLowerCase().includes(normalized) ||
-        customer.phone.toLowerCase().includes(normalized);
+        customerMatchesSearch(customer, normalized);
       const matchesStatus = statusFilter === 'الكل' || customer.summary.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
@@ -566,7 +567,7 @@ function CustomersSection({
             <article className="customer-card" key={customer.id}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
-                  <span className="avatar">{customer.name.slice(0, 1)}</span>
+                  <span className="avatar">{customerAvatar(customer.name)}</span>
                   <div className="min-w-0"><h3>{customer.name}</h3><a href={`tel:${customer.phone}`}>{customer.phone}</a></div>
                 </div>
                 <StatusBadge status={customer.summary.status} />
