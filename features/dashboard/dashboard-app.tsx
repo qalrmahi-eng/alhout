@@ -46,9 +46,7 @@ import {
   cancelPayment,
   customerAvatar,
   customerMatchesSearch,
-  getCustomers,
-  getPayments,
-  getSettings,
+  getDashboard,
   restoreCustomer,
   updateCustomer,
   updateSettings,
@@ -124,14 +122,10 @@ export default function DashboardApp({ username }: { username: string }) {
     if (silent) setRefreshing(true);
     else setLoading(true);
     try {
-      const [nextSettings, nextCustomers, nextPayments] = await Promise.all([
-        getSettings(),
-        getCustomers(),
-        getPayments(),
-      ]);
-      setSettings(nextSettings);
-      setCustomers(nextCustomers);
-      setPayments(nextPayments);
+      const dashboard = await getDashboard();
+      setSettings(dashboard.settings);
+      setCustomers(dashboard.customers);
+      setPayments(dashboard.payments);
     } catch (error) {
       notify(error instanceof Error ? error.message : 'تعذر جلب البيانات', 'error');
     } finally {

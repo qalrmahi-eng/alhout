@@ -3,6 +3,12 @@ import type { Customer, Payment, Settings } from '@/types/domain';
 type UnknownRecord = Record<string, unknown>;
 type Normalizer<T> = (value: unknown) => T;
 
+export type DashboardData = {
+  settings: Settings;
+  customers: Customer[];
+  payments: Payment[];
+};
+
 function asRecord(value: unknown): UnknownRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as UnknownRecord)
@@ -160,6 +166,15 @@ export function normalizePayments(value: unknown): Payment[] {
   return Array.isArray(value) ? value.map(normalizePayment) : [];
 }
 
+export function normalizeDashboard(value: unknown): DashboardData {
+  const record = asRecord(value);
+  return {
+    settings: normalizeSettings(record.settings),
+    customers: normalizeCustomers(record.customers),
+    payments: normalizePayments(record.payments),
+  };
+}
+
 async function request<T>(
   action: string,
   normalize: Normalizer<T>,
@@ -184,6 +199,7 @@ async function request<T>(
 export const getSettings = () => request('settings', normalizeSettings);
 export const getCustomers = () => request('customers', normalizeCustomers);
 export const getPayments = () => request('payments', normalizePayments);
+export const getDashboard = () => request('dashboard', normalizeDashboard);
 export const addCustomer = (data: Record<string, unknown>) =>
   request('add_customer', normalizeCustomer, data);
 export const updateCustomer = (data: Record<string, unknown>) =>

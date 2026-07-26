@@ -39,6 +39,11 @@ type GasRuntime = {
     plan: { sheet: string; action: string; headers: string[] }[];
   };
   applySheetsUpgrade: () => unknown;
+  getDashboard_: () => {
+    settings: Record<string, unknown>;
+    customers: Record<string, unknown>[];
+    payments: Record<string, unknown>[];
+  };
 };
 
 function fakeSheet(name: string, headers: string[], rows: unknown[][] = []) {
@@ -202,5 +207,30 @@ describe('تطبيع عناوين Google Sheets', () => {
     const gas = loadAppsScript();
     expect(typeof gas.applySheetsUpgrade).toBe('function');
   });
-});
 
+  it('يقرأ payments مرة واحدة عند تحميل dashboard', () => {
+    const settings = fakeSheet('settings', ['id'], [[1]]);
+    const customers = fakeSheet('customers', ['id']);
+    const payments = fakeSheet('payments', ['id']);
+    const gas = loadAppsScript({
+      settings: settings.sheet,
+      customers: customers.sheet,
+      payments: payments.sheet,
+    });
+    const originalReadTable = gas.readTable_;
+    let paymentReads = 0;
+    gas.readTable_ = (name: string) => {
+      if (name === 'payments') paymentReads += 1;
+      return originalReadTable(name);
+    };
+
+    const dashboard = gas.getDashboard_();
+
+    expect(paymentReads).toBe(1);
+    expect(dashboard).toMatchObject({
+      settings: { id: 1 },
+      customers: [],
+      payments: [],
+    });
+  });
+});

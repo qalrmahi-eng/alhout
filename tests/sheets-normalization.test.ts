@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import {
   customerAvatar,
   customerMatchesSearch,
+  getDashboard,
   getCustomers,
   getPayments,
   getSettings,
@@ -133,5 +134,48 @@ describe('تطبيع استجابات Google Sheets', () => {
     expect(dashboard).not.toContain('customer.name.slice(');
     expect(dashboard).not.toContain('customer.name.toLowerCase(');
     expect(dashboard).not.toContain('customer.phone.toLowerCase(');
+  });
+
+  it('يطبّع أقسام dashboard الثلاثة من طلب واحد', async () => {
+    mockApiData({
+      settings: {
+        id: '1',
+        system_name: 2026,
+        capital: '500000',
+        default_profit_percent: '10',
+      },
+      customers: [{ id: '9', name: null, phone: 7701234567 }],
+      payments: [{
+        id: '4',
+        customer_id: '9',
+        amount: '25000',
+        payment_date: 20260727,
+      }],
+    });
+
+    await expect(getDashboard()).resolves.toMatchObject({
+      settings: { id: 1, system_name: '2026', capital: 500_000 },
+      customers: [{ id: 9, name: 'بدون اسم', phone: '7701234567' }],
+      payments: [{ id: 4, customer_id: 9, amount: 25_000, payment_date: '20260727' }],
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({
+      action: 'dashboard',
+      data: {},
+    });
+  });
+
+  it('يستخدم التحميل المنطقي استجابة dashboard واحدة', () => {
+    const dashboard = readFileSync('features/dashboard/dashboard-app.tsx', 'utf8');
+    const loadFunction = dashboard.slice(
+      dashboard.indexOf('async function load('),
+      dashboard.indexOf('useEffect(() =>', dashboard.indexOf('async function load(')),
+    );
+
+    expect(loadFunction).toContain('await getDashboard()');
+    expect(loadFunction).not.toContain('Promise.all');
+    expect(loadFunction).not.toContain('getSettings(');
+    expect(loadFunction).not.toContain('getCustomers(');
+    expect(loadFunction).not.toContain('getPayments(');
   });
 });

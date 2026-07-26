@@ -30,4 +30,13 @@ describe('حدود الحماية', () => {
     expect(healthHandler).not.toContain('customers');
     expect(healthHandler).toContain("status: 'healthy'");
   });
+
+  it('يسمح Route Handler بإجراء dashboard', () => {
+    const route = readFileSync('app/api/sheets/route.ts', 'utf8');
+    const allowedActions = route.slice(
+      route.indexOf('const ALLOWED_ACTIONS'),
+      route.indexOf(']);', route.indexOf('const ALLOWED_ACTIONS')),
+    );
+    expect(allowedActions).toContain("'dashboard'");
+  });
 });

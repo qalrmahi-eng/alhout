@@ -2,6 +2,7 @@ import { getSession } from '@/lib/auth';
 import { callAppsScript } from '@/lib/apps-script';
 
 const ALLOWED_ACTIONS = new Set([
+  'dashboard',
   'settings',
   'customers',
   'payments',

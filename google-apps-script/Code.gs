@@ -72,6 +72,7 @@ function doPost(event) {
 
 function dispatch_(action, data, trackingId) {
   var reads = {
+    dashboard: getDashboard_,
     settings: getSettings_,
     customers: listCustomers_,
     payments: listPayments_
@@ -199,9 +200,18 @@ function getSettings_() {
   };
 }
 
-function listCustomers_() {
-  var table = readTable_('customers');
+function getDashboard_() {
   var payments = listPayments_();
+  return {
+    settings: getSettings_(),
+    customers: listCustomers_(payments),
+    payments: payments
+  };
+}
+
+function listCustomers_(payments) {
+  var table = readTable_('customers');
+  payments = payments || listPayments_();
   return table.rows.filter(function (row) { return row.id !== ''; }).map(function (row) {
     return enrichCustomer_(row, payments);
   });
