@@ -237,7 +237,8 @@ function addCustomer_(data) {
   var principal = positiveInteger_(data.principal, 'أصل المبلغ');
   var profitPercent = nonNegativeNumber_(data.profit_percent, 'نسبة الربح');
   var installments = positiveInteger_(data.installments, 'عدد الأقساط');
-  var firstDueDate = requireDate_(data.first_due_date || data.start_date, 'تاريخ أول استحقاق');
+  var deliveryDate = requireDate_(data.delivery_date || data.start_date, 'تاريخ تسليم المبلغ');
+  var firstDueDate = requireDate_(data.first_due_date, 'تاريخ أول استحقاق');
   var frequency = frequency_(data.installment_type || 'monthly');
   var contract = contract_(principal, profitPercent, installments);
   var id = nextNumericId_('customers', 'CUSTOMER_SEQUENCE');
@@ -250,7 +251,7 @@ function addCustomer_(data) {
     profit_percent: profitPercent,
     installments: installments,
     paid_installments: 0,
-    start_date: dateText_(data.delivery_date || data.start_date || firstDueDate),
+    start_date: deliveryDate,
     notes: text_(data.notes),
     status: 'منتظم',
     created_at: now,
@@ -260,7 +261,7 @@ function addCustomer_(data) {
     profit_amount: contract.profit,
     contract_total: contract.total,
     installment_type: frequency,
-    delivery_date: dateText_(data.delivery_date || data.start_date || firstDueDate),
+    delivery_date: deliveryDate,
     first_due_date: firstDueDate,
     expected_end_date: dueDate_(firstDueDate, installments - 1, frequency),
     installment_value: contract.parts[0],
@@ -295,10 +296,14 @@ function updateCustomer_(data) {
     found.object.installments = positiveInteger_(data.installments, 'عدد الأقساط');
   }
   if (data.installment_type !== undefined) found.object.installment_type = frequency_(data.installment_type);
-  if (data.first_due_date !== undefined) {
+  if (hasDateValue_(data.first_due_date)) {
     found.object.first_due_date = requireDate_(data.first_due_date, 'تاريخ أول استحقاق');
   }
-  if (data.delivery_date !== undefined) found.object.delivery_date = requireDate_(data.delivery_date, 'تاريخ التسليم');
+  if (hasDateValue_(data.delivery_date)) {
+    found.object.delivery_date = requireDate_(data.delivery_date, 'تاريخ تسليم المبلغ');
+  } else if (data.delivery_date === undefined && hasDateValue_(data.start_date)) {
+    found.object.delivery_date = requireDate_(data.start_date, 'تاريخ تسليم المبلغ');
+  }
   var preview = contract_(
     positiveInteger_(found.object.principal, 'أصل المبلغ'),
     nonNegativeNumber_(found.object.profit_percent, 'نسبة الربح'),
@@ -430,11 +435,17 @@ function recalculateCustomer_(customerId) {
 }
 
 function enrichCustomer_(row, payments) {
+  row.start_date = dateText_(row.start_date);
+  row.delivery_date = dateText_(row.delivery_date);
+  row.first_due_date = dateText_(row.first_due_date);
+  row.created_at = dateTimeText_(row.created_at);
+  row.updated_at = dateTimeText_(row.updated_at);
   var principal = integer_(row.principal, 0);
   var profitPercent = number_(row.profit_percent, 0);
   var count = Math.max(1, integer_(row.installments, 1));
   var frequency = frequency_(row.installment_type || 'monthly');
-  var firstDue = dateText_(row.first_due_date || row.start_date || row.delivery_date || today_());
+  var firstDue = dateText_(row.first_due_date);
+  var scheduleFirstDue = firstDue || today_();
   var contract = contract_(principal, profitPercent, count);
   var paid = payments.filter(function (payment) {
     return number_(payment.customer_id, 0) === number_(row.id, 0) &&
@@ -446,7 +457,7 @@ function enrichCustomer_(row, payments) {
     return value < contract.parts[index];
   });
   var archived = truthy_(row.archived) || text_(row.status) === 'مؤرشف';
-  var nextDue = currentIndex === -1 ? '' : dueDate_(firstDue, currentIndex, frequency);
+  var nextDue = currentIndex === -1 ? '' : dueDate_(scheduleFirstDue, currentIndex, frequency);
   var status = archived ? 'مؤرشف' : currentIndex === -1 ? 'مكتمل' :
     nextDue < today_() ? 'متأخر' : nextDue === today_() ? 'مستحق اليوم' : 'منتظم';
   row.id = number_(row.id, 0);
@@ -457,7 +468,7 @@ function enrichCustomer_(row, payments) {
   row.contract_total = contract.total;
   row.installment_type = frequency;
   row.first_due_date = firstDue;
-  row.expected_end_date = dueDate_(firstDue, count - 1, frequency);
+  row.expected_end_date = dueDate_(scheduleFirstDue, count - 1, frequency);
   row.installment_value = contract.parts[0];
   row.paid_amount = paid;
   row.remaining_amount = contract.total - paid;
@@ -669,18 +680,58 @@ function nonNegativeInteger_(value, label) { var parsed = integer_(value, NaN); 
 function requireText_(value, message) { var parsed = text_(value); if (!parsed) throw new Error(message); return parsed; }
 function frequency_(value) { var parsed = text_(value).toLowerCase(); if (parsed === 'weekly' || parsed === 'أسبوعي') return 'weekly'; if (parsed === 'monthly' || parsed === 'شهري' || !parsed) return 'monthly'; throw new Error('نوع الأقساط غير صالح'); }
 function truthy_(value) { return value === true || String(value).toLowerCase() === 'true' || String(value) === '1'; }
+function hasDateValue_(value) { return value !== undefined && value !== null && text_(value) !== ''; }
 function today_() { return Utilities.formatDate(new Date(), 'Asia/Baghdad', 'yyyy-MM-dd'); }
 function now_() { return Utilities.formatDate(new Date(), 'Asia/Baghdad', "yyyy-MM-dd'T'HH:mm:ss"); }
+function validCalendarDate_(value) {
+  var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  var year = Number(match[1]);
+  var month = Number(match[2]);
+  var day = Number(match[3]);
+  var date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day;
+}
+function googleSerialDate_(value) {
+  if (!isFinite(value) || value < 0 || value > 2958465) return '';
+  var date = new Date(Date.UTC(1899, 11, 30) + Math.floor(value) * 86400000);
+  return Utilities.formatDate(date, 'UTC', 'yyyy-MM-dd');
+}
 function dateText_(value) {
-  if (!value) return '';
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'number') return googleSerialDate_(value);
   if (Object.prototype.toString.call(value) === '[object Date]') return Utilities.formatDate(value, 'Asia/Baghdad', 'yyyy-MM-dd');
-  var text = String(value).slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : '';
+  var text = String(value).trim();
+  if (validCalendarDate_(text)) return text;
+  var prefix = text.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(prefix) && !validCalendarDate_(prefix)) return '';
+  var local = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?$/.exec(text);
+  if (local) {
+    return Number(local[2]) <= 23 && Number(local[3]) <= 59 && Number(local[4] || 0) <= 59
+      ? local[1]
+      : '';
+  }
+  var parsed = new Date(text);
+  return isNaN(parsed.getTime()) ? '' : Utilities.formatDate(parsed, 'Asia/Baghdad', 'yyyy-MM-dd');
 }
 function dateTimeText_(value) {
-  if (!value) return '';
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'number') return googleSerialDate_(value);
   if (Object.prototype.toString.call(value) === '[object Date]') return Utilities.formatDate(value, 'Asia/Baghdad', "yyyy-MM-dd'T'HH:mm:ss");
-  return String(value);
+  var text = String(value).trim();
+  if (validCalendarDate_(text)) return text;
+  var prefix = text.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(prefix) && !validCalendarDate_(prefix)) return '';
+  var local = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?$/.exec(text);
+  if (local) {
+    return Number(local[2]) <= 23 && Number(local[3]) <= 59 && Number(local[4] || 0) <= 59
+      ? text.replace(' ', 'T')
+      : '';
+  }
+  var parsed = new Date(text);
+  return isNaN(parsed.getTime()) ? '' : Utilities.formatDate(parsed, 'Asia/Baghdad', "yyyy-MM-dd'T'HH:mm:ss");
 }
 function requireDate_(value, label) { var parsed = dateText_(value); if (!parsed) throw new Error(label + ' غير صالح'); return parsed; }
 function uniqueSheetName_(spreadsheet, base) { var name = base; var index = 1; while (spreadsheet.getSheetByName(name)) { name = base + '_' + index; index += 1; } return name; }

@@ -53,8 +53,8 @@ describe('تطبيع استجابات Google Sheets', () => {
       installments: 10,
       archived: false,
       paid_amount: 25_000,
-      next_due_date: '20260801',
-      updated_at: '20260727',
+      next_due_date: '',
+      updated_at: '',
     });
     expect(() => customerAvatar(customer.name)).not.toThrow();
     expect(customerAvatar(customer.name)).toBe('1');

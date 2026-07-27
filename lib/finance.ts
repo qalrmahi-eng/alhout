@@ -164,7 +164,7 @@ export function summarizeContract(
   );
   const count = Math.max(1, Math.trunc(customer.installments || 1));
   const frequency = customer.installment_type ?? 'monthly';
-  const firstDueDate = customer.first_due_date || customer.start_date || customer.delivery_date || today;
+  const firstDueDate = customer.first_due_date || today;
   const customerPayments = payments.filter(
     (payment) => Number(payment.customer_id) === Number(customer.id),
   );

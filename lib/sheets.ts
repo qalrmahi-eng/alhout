@@ -1,4 +1,8 @@
 import type { Customer, Payment, Settings } from '@/types/domain';
+import {
+  normalizeSheetDate,
+  normalizeSheetDateTime,
+} from '@/lib/dates';
 
 type UnknownRecord = Record<string, unknown>;
 type Normalizer<T> = (value: unknown) => T;
@@ -120,22 +124,22 @@ export function normalizeCustomer(value: unknown): Customer {
     contract_total: number(record.contract_total),
     installments: number(record.installments),
     installment_type: installmentFrequency(record.installment_type),
-    delivery_date: text(record.delivery_date),
-    first_due_date: text(record.first_due_date),
-    expected_end_date: text(record.expected_end_date),
+    delivery_date: normalizeSheetDate(record.delivery_date),
+    first_due_date: normalizeSheetDate(record.first_due_date),
+    expected_end_date: normalizeSheetDate(record.expected_end_date),
     installment_value: number(record.installment_value),
     paid_installments: number(record.paid_installments),
     paid_amount: number(record.paid_amount),
     remaining_amount: number(record.remaining_amount),
     current_installment_paid: number(record.current_installment_paid),
     current_installment_remaining: number(record.current_installment_remaining),
-    next_due_date: text(record.next_due_date),
-    start_date: text(record.start_date),
+    next_due_date: normalizeSheetDate(record.next_due_date),
+    start_date: normalizeSheetDate(record.start_date),
     notes: text(record.notes),
     status,
-    created_at: text(record.created_at),
+    created_at: normalizeSheetDateTime(record.created_at),
     archived: boolean(record.archived, status === 'مؤرشف'),
-    updated_at: text(record.updated_at),
+    updated_at: normalizeSheetDateTime(record.updated_at),
   };
 }
 

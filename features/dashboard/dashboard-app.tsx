@@ -40,6 +40,12 @@ import {
 import WhaleLogo from '@/components/whale-logo';
 import ReceiptModal from '@/features/receipts/receipt-modal';
 import {
+  buildCustomerFormPayload,
+  customerDeliveryInputValue,
+  customerFirstDueInputValue,
+} from '@/lib/customer-form';
+import { formatBaghdadDateTime } from '@/lib/dates';
+import {
   addCustomer,
   addPayment,
   archiveCustomer,
@@ -691,19 +697,12 @@ function SettingsSection({ settings, dark, onDark, onSaved }: { settings: Settin
 function CustomerForm({ customer, defaults, onClose, onSaved }: { customer: Customer | null; defaults: Settings; onClose: () => void; onSaved: () => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const firstDue = customer?.first_due_date || customer?.start_date || '';
+  const deliveryDate = customerDeliveryInputValue(customer);
+  const firstDueDate = customerFirstDueInputValue(customer);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setError('');
-    const form = new FormData(event.currentTarget);
-    const data = {
-      name: form.get('name'), phone: form.get('phone'), address: form.get('address'),
-      guarantor_name: form.get('guarantor_name'), guarantor_phone: form.get('guarantor_phone'),
-      principal: Number(form.get('principal')), profit_percent: Number(form.get('profit_percent')),
-      installments: Number(form.get('installments')), installment_type: form.get('installment_type'),
-      delivery_date: form.get('delivery_date'), first_due_date: form.get('first_due_date'),
-      start_date: form.get('delivery_date'), notes: form.get('notes'),
-    };
     try {
+      const data = buildCustomerFormPayload(new FormData(event.currentTarget));
       if (customer) await updateCustomer({ ...data, customer_id: customer.id });
       else await addCustomer(data);
       onSaved();
@@ -722,8 +721,9 @@ function CustomerForm({ customer, defaults, onClose, onSaved }: { customer: Cust
       <Field label="نسبة الربح %"><input name="profit_percent" type="number" min="0" step="0.01" defaultValue={customer?.profit_percent ?? defaults.default_profit_percent} required /></Field>
       <Field label="عدد الأقساط"><input name="installments" type="number" min="1" step="1" defaultValue={customer?.installments || 10} required /></Field>
       <Field label="نوع الأقساط"><select name="installment_type" defaultValue={customer?.installment_type || defaults.default_installment_type || 'monthly'}><option value="monthly">شهري</option><option value="weekly">أسبوعي</option></select></Field>
-      <Field label="تاريخ تسليم المبلغ"><input name="delivery_date" type="date" defaultValue={customer?.delivery_date || customer?.start_date} required /></Field>
-      <Field label="تاريخ أول استحقاق"><input name="first_due_date" type="date" defaultValue={firstDue} required /></Field>
+      <Field label="تاريخ تسليم المبلغ"><input name="delivery_date" type="date" defaultValue={deliveryDate} required /></Field>
+      <Field label="تاريخ أول استحقاق"><input name="first_due_date" type="date" defaultValue={firstDueDate} required /></Field>
+      {customer && <AuditDates customer={customer} className="form-wide" />}
       <Field label="ملاحظات" wide><textarea name="notes" defaultValue={customer?.notes} rows={3} /></Field>
       {error && <p className="error-banner form-wide">{error}</p>}
       <div className="form-wide modal-actions"><button type="button" className="secondary-button" onClick={onClose}>إلغاء</button><button className="primary-button" disabled={saving}>{saving && <LoaderCircle size={17} className="animate-spin" />}{customer ? 'حفظ التعديلات' : 'إضافة العميل'}</button></div>
@@ -768,6 +768,7 @@ function CustomerDetails({ customer, payments, onClose, onPay, onReceipt }: { cu
       <DetailMetric label="المتبقي" value={money(customer.summary.remaining)} />
       <DetailMetric label="المكتمل" value={`${customer.summary.completedInstallments} من ${customer.installments}`} />
     </div>
+    <AuditDates customer={customer} className="mt-3" />
     <div className="mt-5 grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
       <div><h3 className="section-heading">جدول الأقساط</h3><div className="table-wrap max-h-96"><table><thead><tr><th>#</th><th>الاستحقاق</th><th>المطلوب</th><th>المغطى</th><th>المتبقي</th><th>الحالة</th></tr></thead><tbody>{customer.summary.schedule.map((row) => <tr key={row.number}><td>{row.number}</td><td>{row.dueDate}</td><td>{money(row.amount)}</td><td>{money(row.paid)}</td><td>{money(row.remaining)}</td><td><span className="status">{row.status}</span></td></tr>)}</tbody></table></div></div>
       <div><h3 className="section-heading">سجل الدفعات</h3><div className="timeline">{[...payments].reverse().map((payment) => <div className={payment.status === 'cancelled' ? 'timeline-item cancelled-row' : 'timeline-item'} key={payment.id}><i /><div><strong>{money(payment.amount)}</strong><small>{payment.payment_date} · {payment.receipt_number || `#${payment.id}`}</small>{payment.notes && <p>{payment.notes}</p>}</div><button className="mini-button" onClick={() => onReceipt(payment)}>الوصل</button></div>)}{!payments.length && <EmptyState text="لا توجد دفعات." />}</div></div>
@@ -796,6 +797,12 @@ function PanelTitle({ title, subtitle, icon: Icon }: { title: string; subtitle: 
 function ModalHeader({ title, onClose }: { title: string; onClose: () => void }) { return <div className="modal-header"><h2>{title}</h2><button className="icon-button" onClick={onClose}><X size={19} /></button></div>; }
 function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) { return <label className={wide ? 'field-label form-wide' : 'field-label'}>{label}{children}</label>; }
 function DetailMetric({ label, value }: { label: string; value: string }) { return <div><small>{label}</small><strong>{value}</strong></div>; }
+function AuditDates({ customer, className = '' }: { customer: Customer; className?: string }) {
+  return <div className={`detail-summary ${className}`.trim()}>
+    <DetailMetric label="تاريخ إضافة العميل" value={formatBaghdadDateTime(customer.created_at)} />
+    <DetailMetric label="آخر تحديث" value={formatBaghdadDateTime(customer.updated_at)} />
+  </div>;
+}
 function EmptyState({ text }: { text: string }) { return <div className="empty-state"><CheckCircle2 size={30} /><p>{text}</p></div>; }
 function StatusBadge({ status }: { status: CustomerStatus }) { const key = status === 'متأخر' ? 'late' : status === 'مستحق اليوم' ? 'today' : status === 'مكتمل' ? 'paid' : status === 'مؤرشف' ? 'archived' : 'regular'; return <span className={`status status-${key}`}>{status}</span>; }
 function ReportBar({ label, value, max }: { label: string; value: number; max: number }) { return <div><div className="progress-meta"><span>{label}</span><strong>{value}</strong></div><div className="progress-track"><i style={{ width: `${max ? (value / max) * 100 : 0}%` }} /></div></div>; }
