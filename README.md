@@ -1,36 +1,119 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# الحوت
 
-## Getting Started
+نظام عربي Mobile First لإدارة رأس المال والعملاء والعقود ذات الربح الثابت والأقساط والدفعات والإيصالات. يعمل Next.js كواجهة وخادم آمن، وتبقى البيانات في Google Sheets عبر Google Apps Script.
 
-First, run the development server:
+## الحساب المالي
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+الربح يحسب مرة واحدة:
+
+```text
+الربح = أصل المبلغ × نسبة الربح ÷ 100
+إجمالي العقد = أصل المبلغ + الربح
+المتبقي = إجمالي العقد − مجموع الدفعات النشطة
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+المبالغ دنانير عراقية صحيحة. تستخدم دوال [lib/finance.ts](lib/finance.ts) أعدادًا صحيحة و`BigInt` عند ضرب النسبة لتجنب فروق floating point. يقسم الإجمالي على عدد الأقساط، ويحمل القسط الأخير فرق التقريب. الدفعات توزع بالتسلسل على الأقساط؛ لذلك الدفعة الجزئية لا تزيد عدد الأقساط المكتملة، ويمكن لدفعة لاحقة إكمالها وتغطية أقساط أخرى أو الدفع مقدمًا. لا توجد غرامة تأخير.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## البنية
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```text
+app/                    صفحات Server Components وRoute Handlers وPWA
+components/             عناصر الهوية والتسجيل
+features/auth/          واجهة تسجيل الدخول
+features/dashboard/     لوحة التحكم والعملاء والدفعات والتقارير
+features/receipts/      الوصل، PNG والمشاركة والطباعة
+google-apps-script/     Code.gs ودليل الترقية والنشر
+lib/                    الحساب والمصادقة ووسيط البيانات
+types/                  أنواع البيانات المشتركة
+tests/                  اختبارات مالية وأمنية
+docs/                   تقرير ترقية البيانات
+proxy.ts                فحص جلسة سريع وفق Next.js 16
+```
 
-## Learn More
+## الإعداد المحلي
 
-To learn more about Next.js, take a look at the following resources:
+يتطلب Node.js 20 أو أحدث.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm install
+copy .env.example .env.local
+npm run hash-password -- "كلمة-مرور-قوية-لا-تقل-عن-12"
+npm run dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+انسخ ناتج hash إلى `ADMIN_PASSWORD_HASH`، ثم املأ:
 
-## Deploy on Vercel
+```text
+ADMIN_USERNAME
+ADMIN_PASSWORD_HASH
+SESSION_SECRET
+SHEETS_API_URL
+SHEETS_API_SECRET
+APP_TIMEZONE=Asia/Baghdad
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+يجب أن يكون `SESSION_SECRET` عشوائيًا بطول 32 حرفًا على الأقل. لا تستخدم `NEXT_PUBLIC_` لأي رابط أو سر. المتصفح يتصل بـNext.js فقط، وNext.js يرسل كل الإجراءات — حتى القراءة — إلى Apps Script عبر POST والسر داخل body.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## الحماية
+
+- كلمة المرور hash من نوع scrypt وليست نصًا صريحًا.
+- Session موقعة داخل Cookie من نوع HttpOnly، وSecure في الإنتاج، وSameSite=Lax.
+- الصفحات وواجهات API محمية، مع rate limit بسيط لتسجيل الدخول.
+- رسائل Apps Script آمنة وتحمل tracking id عند الحاجة، ولا تعرض الاستثناء أو الرابط أو السر.
+- الدفعات لا تحذف؛ تلغى مع السبب وتستبعد من الحساب. العملاء يؤرشفون ويمكن استرجاعهم.
+- Service Worker يخزن الأيقونات وصفحة الدخول الثابتة فقط، ولا يخزن `/` أو API أو بيانات العملاء.
+
+ملاحظة تدقيق: في 26 يوليو 2026 ظل `npm audit` يبلغ عن `postcss` و`sharp` الداخليين في Next.js 16.2.12، وعن مسار `brace-expansion` في أدوات lint. يقترح npm إصلاحًا قسريًا يرجع Next إلى 9 أو يرفع ESLint إصدارًا رئيسيًا، لذلك لم يُطبق. المشروع لا يقبل CSS من المستخدم، ولا يستخدم `next/image` (وتحسين الصور معطل)، ما يقلل سطح التعرض إلى أن تصدر ترقيات متوافقة. يجب إعادة فحصها قبل النشر.
+
+## Google Sheets وApps Script
+
+راجع [google-apps-script/README.md](google-apps-script/README.md) قبل التنفيذ. شغّل أولًا:
+
+```js
+upgradeSheets() // dry run افتراضي
+```
+
+وبعد مراجعة الخطة وعلى نسخة تجريبية، استخدم دالة التطبيق الرسمية:
+
+```js
+applySheetsUpgrade()
+```
+
+تحافظ الترقية على الأعمدة القديمة وترتيبها، وتضيف الناقص إلى اليمين فقط، وتنشئ أوراق Backup مؤرخة وتقرير `migration_report`. التفاصيل في [docs/MIGRATION.md](docs/MIGRATION.md).
+
+## الإيصالات
+
+بعد حفظ الدفعة يعرض النظام وصلًا عربيًا RTL. تُنشأ صورة PNG داخل المتصفح بواسطة `html-to-image` ولا تُرفع إلى أي خدمة. تستخدم المشاركة Web Share API للملفات؛ وإذا لم يدعم الجهاز ذلك تُنزّل الصورة وتظهر رسالة عربية. يمكن إعادة فتح وصل أي دفعة من سجل الدفعات. فشل إنشاء الصورة لا يلغي الدفعة المحفوظة.
+
+## الفحوصات
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
+الاختبارات تستخدم بيانات محلية فقط ولا تتصل بـGoogle Sheets.
+
+## الاختبار اليدوي المقترح
+
+1. سجّل الدخول وتحقق من رفض كلمة مرور خاطئة وتسجيل الخروج.
+2. أضف عقدًا بقيمة `1,000,000` وربح `10%` وعشرة أقساط؛ يجب أن يكون الإجمالي `1,100,000` والقسط `110,000`.
+3. سجّل `40,000`؛ يجب أن يبقى القسط الأول جزئيًا والمتبقي منه `70,000`.
+4. سجّل `180,000`؛ يجب اكتمال القسطين الأول والثاني وانتقال القادم إلى الثالث.
+5. ألغِ الدفعة الثانية بسبب واضح وتحقق من إعادة الحساب وبقائها ظاهرة كملغاة.
+6. جرّب عقدًا يبدأ في 31 يناير، وأقساطًا أسبوعية، ودفعًا مقدمًا.
+7. نزّل الوصل وشاركه من هاتف واطبعه، ثم أعد فتحه من سجل الدفعات.
+8. أرشف عميلًا ثم استرجعه.
+9. ثبّت PWA وتحقق من أن بيانات العملاء لا تظهر دون اتصال أو دون Session.
+
+## النشر على خادم Node.js
+
+1. اضبط متغيرات البيئة في مدير أسرار الخادم.
+2. نفّذ `npm ci && npm run build`.
+3. شغّل `node .next/standalone/server.js` خلف HTTPS وreverse proxy.
+4. انسخ `.next/static` و`public` بجوار مخرجات standalone وفق توثيق Next.js.
+5. لا تنشر قبل ترقية نسخة Sheets تجريبية، فحص النسخ الاحتياطية، وتحديث Apps Script إلى deployment version جديد.
+
+الاعتماديات الجديدة محدودة: `framer-motion` للحركة الخفيفة، `recharts` للرسم، `lucide-react` للأيقونات المتناسقة، `html-to-image` لإنشاء الوصل محليًا، و`vitest` للاختبارات.
