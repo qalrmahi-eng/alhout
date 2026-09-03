@@ -1,33 +1,42 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Download, Printer, Share2, X } from 'lucide-react';
 import { toPng } from 'html-to-image';
-import type { ContractSummary, Customer, Payment, Settings } from '@/types/domain';
+import type { Contract, ContractSummary, Customer, Payment, Settings } from '@/types/domain';
 import WhaleLogo from '@/components/whale-logo';
 import { buildReceiptSnapshot } from '@/lib/receipt';
+import { formatDate, formatIqd } from '@/lib/formatters';
 
 type Props = {
   customer: Customer;
+  contract: Contract;
   payment: Payment;
   summary: ContractSummary;
   settings: Settings;
   onClose: () => void;
   notify: (message: string, type?: 'success' | 'error') => void;
+  autoPrint?: boolean;
 };
-
-const iqd = (value: number) => `${new Intl.NumberFormat('ar-IQ').format(value)} د.ع`;
 
 export default function ReceiptModal({
   customer,
+  contract,
   payment,
   summary,
   settings,
   onClose,
   notify,
+  autoPrint = false,
 }: Props) {
   const receiptRef = useRef<HTMLDivElement>(null);
   const [working, setWorking] = useState(false);
+
+  useEffect(() => {
+    if (!autoPrint) return;
+    const timer = window.setTimeout(() => window.print(), 250);
+    return () => window.clearTimeout(timer);
+  }, [autoPrint]);
 
   async function makeImage() {
     if (!receiptRef.current) throw new Error('تعذر العثور على الوصل');
@@ -80,8 +89,7 @@ export default function ReceiptModal({
     }
   }
 
-  const created = new Date(payment.created_at || `${payment.payment_date}T12:00:00+03:00`);
-  const snapshot = buildReceiptSnapshot(customer, payment, summary);
+  const snapshot = buildReceiptSnapshot(customer, contract, payment, summary);
 
   return (
     <div className="modal-backdrop receipt-dialog" role="dialog" aria-modal="true">
@@ -89,7 +97,7 @@ export default function ReceiptModal({
         <div className="no-print mb-4 flex items-center justify-between">
           <div>
             <p className="eyebrow">تم حفظ الدفعة بنجاح</p>
-            <h2 className="text-xl font-black">وصل الاستلام جاهز</h2>
+            <h2 className="text-xl font-black">وصل القبض جاهز</h2>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="إغلاق">
             <X size={20} />
@@ -104,39 +112,40 @@ export default function ReceiptModal({
               <p className="text-xs text-slate-500">رقم الوصل</p>
               <strong dir="ltr">{snapshot.receiptNumber}</strong>
               <p className="mt-1 text-xs text-slate-500">
-                {created.toLocaleString('ar-IQ', { timeZone: 'Asia/Baghdad' })}
+                تاريخ الدفع: {formatDate(payment.payment_date)}
               </p>
             </div>
           </header>
           <div className="receipt-title">
-            <span>وصل استلام</span>
+            <span>وصل قبض</span>
             <small>{settings.system_name}</small>
           </div>
           <p className="receipt-statement">
             استلمنا من السيد/ة <strong>{snapshot.customerName}</strong> مبلغًا قدره{' '}
-            <strong>{iqd(snapshot.paymentAmount)}</strong> عن العقد المبين أدناه.
+            <strong>{formatIqd(snapshot.paymentAmount)}</strong> عن العقد المبين أدناه.
           </p>
           <div className="receipt-grid">
+            <ReceiptItem label="رقم العقد" value={`C-${String(snapshot.contractId).padStart(5, '0')}`} />
             <ReceiptItem label="رقم الهاتف" value={snapshot.customerPhone} />
-            <ReceiptItem label="أصل المبلغ" value={iqd(snapshot.principal)} />
+            <ReceiptItem label="أصل المبلغ" value={formatIqd(snapshot.principal)} />
             <ReceiptItem label="نسبة الربح" value={`${snapshot.profitPercent}%`} />
-            <ReceiptItem label="مبلغ الربح" value={iqd(snapshot.profitAmount)} />
-            <ReceiptItem label="إجمالي العقد" value={iqd(snapshot.contractTotal)} />
-            <ReceiptItem label="هذه الدفعة" value={iqd(snapshot.paymentAmount)} accent />
-            <ReceiptItem label="مجموع المدفوع" value={iqd(snapshot.paidAfterPayment)} />
-            <ReceiptItem label="المتبقي" value={iqd(snapshot.remaining)} />
-            <ReceiptItem label="قيمة القسط" value={iqd(snapshot.installmentValue)} />
+            <ReceiptItem label="مبلغ الربح" value={formatIqd(snapshot.profitAmount)} />
+            <ReceiptItem label="إجمالي العقد" value={formatIqd(snapshot.contractTotal)} />
+            <ReceiptItem label="المبلغ المستلم" value={formatIqd(snapshot.paymentAmount)} accent />
+            <ReceiptItem label="مجموع المدفوع بعد الدفعة" value={formatIqd(snapshot.paidAfterPayment)} />
+            <ReceiptItem label="المتبقي بعد الدفعة" value={formatIqd(snapshot.remaining)} />
+            <ReceiptItem label="قيمة القسط" value={formatIqd(snapshot.installmentValue)} />
             <ReceiptItem
               label="الأقساط المكتملة / المتبقية"
               value={`${snapshot.completedInstallments} / ${snapshot.remainingInstallments}`}
             />
             <ReceiptItem
               label="المدفوع / المتبقي من القسط الحالي"
-              value={`${iqd(snapshot.currentInstallmentPaid)} / ${iqd(snapshot.currentInstallmentRemaining)}`}
+              value={`${formatIqd(snapshot.currentInstallmentPaid)} / ${formatIqd(snapshot.currentInstallmentRemaining)}`}
             />
             <ReceiptItem
               label="موعد القسط القادم"
-              value={snapshot.completed ? 'تم إكمال العقد' : snapshot.nextDueDate || '-'}
+              value={snapshot.completed ? 'تم إكمال العقد' : formatDate(snapshot.nextDueDate)}
             />
           </div>
           {snapshot.completed && <div className="completed-ribbon">تم إكمال العقد بالكامل</div>}
@@ -160,7 +169,7 @@ export default function ReceiptModal({
             <Share2 size={17} /> مشاركة
           </button>
           <button className="secondary-button" onClick={() => window.print()}>
-            <Printer size={17} /> طباعة
+            <Printer size={17} /> طباعة / PDF
           </button>
           <button className="primary-button" onClick={onClose}>
             <X size={17} /> إغلاق

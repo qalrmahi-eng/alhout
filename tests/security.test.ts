@@ -38,5 +38,6 @@ describe('حدود الحماية', () => {
       route.indexOf(']);', route.indexOf('const ALLOWED_ACTIONS')),
     );
     expect(allowedActions).toContain("'dashboard'");
+    expect(allowedActions).toContain("'reports_summary'");
   });
 });

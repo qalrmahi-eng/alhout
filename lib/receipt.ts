@@ -1,7 +1,8 @@
-import type { ContractSummary, Customer, Payment } from '@/types/domain';
+import type { Contract, ContractSummary, Customer, Payment } from '@/types/domain';
 
 export function buildReceiptSnapshot(
   customer: Customer,
+  contract: Contract,
   payment: Payment,
   summary: ContractSummary,
 ) {
@@ -9,16 +10,17 @@ export function buildReceiptSnapshot(
     receiptNumber: payment.receipt_number || `R-${payment.id}`,
     customerName: customer.name,
     customerPhone: customer.phone,
-    principal: customer.principal,
-    profitPercent: customer.profit_percent,
+    contractId: contract.id,
+    principal: contract.principal,
+    profitPercent: contract.profit_percent,
     profitAmount: summary.profitAmount,
     contractTotal: summary.contractTotal,
     paymentAmount: payment.amount,
-    paidAfterPayment: summary.paidAmount,
-    remaining: summary.remaining,
+    paidAfterPayment: payment.paid_after ?? summary.paidAmount,
+    remaining: payment.remaining_after ?? summary.remaining,
     installmentValue: summary.installmentValue,
     completedInstallments: summary.completedInstallments,
-    remainingInstallments: Math.max(customer.installments - summary.completedInstallments, 0),
+    remainingInstallments: Math.max(contract.installments - summary.completedInstallments, 0),
     currentInstallmentPaid: summary.currentInstallmentPaid,
     currentInstallmentRemaining: summary.currentInstallmentRemaining,
     nextDueDate: summary.nextDueDate,
@@ -26,4 +28,3 @@ export function buildReceiptSnapshot(
     notes: payment.notes || '',
   };
 }
-

@@ -11,23 +11,27 @@ var SHEETS = {
     added: ['default_installment_type', 'receipt_footer', 'updated_at']
   },
   customers: {
+    legacy: ['id', 'name', 'phone', 'notes', 'created_at'],
+    added: ['address', 'archived', 'updated_at']
+  },
+  contracts: {
     legacy: [
-      'id', 'name', 'phone', 'principal', 'profit_percent', 'installments',
-      'paid_installments', 'start_date', 'notes', 'status', 'created_at'
+      'id', 'customer_id', 'principal', 'profit_percent', 'profit_amount',
+      'contract_total', 'installments', 'installment_value', 'delivery_date',
+      'first_due_date', 'expected_end_date', 'guarantor_name', 'guarantor_phone',
+      'notes'
     ],
     added: [
-      'address', 'guarantor_name', 'guarantor_phone', 'profit_amount',
-      'contract_total', 'installment_type', 'delivery_date', 'first_due_date',
-      'expected_end_date', 'installment_value', 'paid_amount', 'remaining_amount',
-      'current_installment_paid', 'current_installment_remaining', 'next_due_date',
-      'archived', 'updated_at'
+      'paid_amount', 'remaining_amount', 'current_installment_paid',
+      'current_installment_remaining', 'next_due_date', 'status', 'archived',
+      'created_at', 'updated_at'
     ]
   },
   payments: {
     legacy: ['id', 'customer_id', 'amount', 'payment_date', 'notes', 'created_at'],
     added: [
-      'request_id', 'receipt_number', 'status', 'cancellation_reason',
-      'cancelled_at', 'updated_at'
+      'contract_id', 'request_id', 'receipt_number', 'status', 'cancellation_reason',
+      'cancelled_at', 'paid_after', 'remaining_after', 'updated_at'
     ]
   }
 };
@@ -75,7 +79,9 @@ function dispatch_(action, data, trackingId) {
     dashboard: getDashboard_,
     settings: getSettings_,
     customers: listCustomers_,
-    payments: listPayments_
+    contracts: listContracts_,
+    payments: listPayments_,
+    reports_summary: function () { return reportsSummary_(data); }
   };
   if (reads[action]) return json_({ ok: true, data: reads[action](), status: 200 });
 
@@ -84,6 +90,10 @@ function dispatch_(action, data, trackingId) {
     update_customer: updateCustomer_,
     archive_customer: archiveCustomer_,
     restore_customer: restoreCustomer_,
+    add_contract: addContract_,
+    update_contract: updateContract_,
+    archive_contract: archiveContract_,
+    restore_contract: restoreContract_,
     add_payment: addPayment_,
     cancel_payment: cancelPayment_,
     update_settings: updateSettings_,
@@ -202,18 +212,96 @@ function getSettings_() {
 
 function getDashboard_() {
   var payments = listPayments_();
+  var paymentsByContract = indexPaymentsByContract_(payments);
+  var customers = listCustomers_();
+  var contracts = listContracts_(paymentsByContract);
   return {
     settings: getSettings_(),
-    customers: listCustomers_(payments),
-    payments: payments
+    customers: customers,
+    contracts: contracts,
+    payments: payments,
+    summary: dashboardSummary_(customers, contracts, payments)
   };
 }
 
-function listCustomers_(payments) {
+function dashboardSummary_(customers, contracts, payments) {
+  var month = today_().slice(0, 7);
+  var activePayments = payments.filter(function (payment) {
+    return (text_(payment.status) || 'active') === 'active';
+  });
+  return {
+    total_principal: contracts.reduce(function (sum, contract) { return sum + integer_(contract.principal, 0); }, 0),
+    total_contract_value: contracts.reduce(function (sum, contract) { return sum + integer_(contract.contract_total, 0); }, 0),
+    total_received: activePayments.reduce(function (sum, payment) { return sum + integer_(payment.amount, 0); }, 0),
+    total_remaining: contracts.filter(function (contract) {
+      return !truthy_(contract.archived) && text_(contract.status) !== 'مؤرشف' && text_(contract.status) !== 'مكتمل';
+    }).reduce(function (sum, contract) { return sum + integer_(contract.remaining_amount, 0); }, 0),
+    total_expected_profit: contracts.reduce(function (sum, contract) { return sum + integer_(contract.profit_amount, 0); }, 0),
+    received_this_month: activePayments.filter(function (payment) {
+      return dateText_(payment.payment_date).slice(0, 7) === month;
+    }).reduce(function (sum, payment) { return sum + integer_(payment.amount, 0); }, 0),
+    customers_count: customers.filter(function (customer) { return !truthy_(customer.archived); }).length,
+    active_contracts_count: contracts.filter(function (contract) {
+      return text_(contract.status) !== 'مكتمل' && text_(contract.status) !== 'مؤرشف';
+    }).length,
+    completed_contracts_count: contracts.filter(function (contract) { return text_(contract.status) === 'مكتمل'; }).length,
+    overdue_contracts_count: contracts.filter(function (contract) { return text_(contract.status) === 'متأخر'; }).length
+  };
+}
+
+function reportsSummary_(data) {
+  var from = requireDate_(data.from, 'تاريخ بداية التقرير');
+  var to = requireDate_(data.to, 'تاريخ نهاية التقرير');
+  if (from > to) throw new Error('تاريخ بداية التقرير يجب ألا يتجاوز تاريخ النهاية');
+  var payments = listPayments_();
+  var paymentsByContract = indexPaymentsByContract_(payments);
+  var contracts = listContracts_(paymentsByContract);
+  var inRange = function (value) { var date = dateText_(value); return date >= from && date <= to; };
+  var activePayments = payments.filter(function (payment) {
+    return (text_(payment.status) || 'active') === 'active' && inRange(payment.payment_date);
+  });
+  var cancelledPayments = payments.filter(function (payment) {
+    return text_(payment.status) === 'cancelled' && inRange(payment.payment_date);
+  });
+  var newContracts = contracts.filter(function (contract) { return inRange(contract.delivery_date); });
+  var completed = contracts.filter(function (contract) {
+    if (text_(contract.status) !== 'مكتمل') return false;
+    var rows = paymentsByContract[number_(contract.id, 0)] || [];
+    var completionDate = rows.filter(function (payment) {
+      return (text_(payment.status) || 'active') === 'active';
+    }).reduce(function (latest, payment) {
+      var date = dateText_(payment.payment_date);
+      return date > latest ? date : latest;
+    }, '');
+    return inRange(completionDate);
+  });
+  return {
+    from: from,
+    to: to,
+    received_amount: activePayments.reduce(function (sum, payment) { return sum + integer_(payment.amount, 0); }, 0),
+    payments_count: activePayments.length,
+    cancelled_payments_amount: cancelledPayments.reduce(function (sum, payment) { return sum + integer_(payment.amount, 0); }, 0),
+    cancelled_payments_count: cancelledPayments.length,
+    new_contracts_count: newContracts.length,
+    new_contracts_principal: newContracts.reduce(function (sum, contract) { return sum + integer_(contract.principal, 0); }, 0),
+    new_contracts_total: newContracts.reduce(function (sum, contract) { return sum + integer_(contract.contract_total, 0); }, 0),
+    new_contracts_profit: newContracts.reduce(function (sum, contract) { return sum + integer_(contract.profit_amount, 0); }, 0),
+    completed_contracts_count: completed.length
+  };
+}
+
+function listCustomers_() {
   var table = readTable_('customers');
-  payments = payments || listPayments_();
   return table.rows.filter(function (row) { return row.id !== ''; }).map(function (row) {
-    return enrichCustomer_(row, payments);
+    return normalizeCustomerRow_(row);
+  });
+}
+
+function listContracts_(paymentsByContract) {
+  var table = readTable_('contracts');
+  paymentsByContract = paymentsByContract || indexPaymentsByContract_(listPayments_());
+  return table.rows.filter(function (row) { return row.id !== ''; }).map(function (row) {
+    return enrichContract_(row, paymentsByContract[number_(row.id, 0)] || []);
   });
 }
 
@@ -222,7 +310,10 @@ function listPayments_() {
   return table.rows.filter(function (row) { return row.id !== ''; }).map(function (row) {
     row.id = number_(row.id, 0);
     row.customer_id = number_(row.customer_id, 0);
+    row.contract_id = number_(row.contract_id, 0);
     row.amount = integer_(row.amount, 0);
+    row.paid_after = integer_(row.paid_after, 0);
+    row.remaining_after = integer_(row.remaining_after, 0);
     row.status = text_(row.status) || 'active';
     row.payment_date = dateText_(row.payment_date);
     row.created_at = dateTimeText_(row.created_at);
@@ -231,45 +322,27 @@ function listPayments_() {
   });
 }
 
+function indexPaymentsByContract_(payments) {
+  return payments.reduce(function (index, payment) {
+    var contractId = number_(payment.contract_id, 0);
+    if (!contractId) return index;
+    if (!index[contractId]) index[contractId] = [];
+    index[contractId].push(payment);
+    return index;
+  }, Object.create(null));
+}
+
 function addCustomer_(data) {
   requireText_(data.name, 'اسم العميل مطلوب');
-  requireText_(data.phone, 'رقم الهاتف مطلوب');
-  var principal = positiveInteger_(data.principal, 'أصل المبلغ');
-  var profitPercent = nonNegativeNumber_(data.profit_percent, 'نسبة الربح');
-  var installments = positiveInteger_(data.installments, 'عدد الأقساط');
-  var deliveryDate = requireDate_(data.delivery_date || data.start_date, 'تاريخ تسليم المبلغ');
-  var firstDueDate = requireDate_(data.first_due_date, 'تاريخ أول استحقاق');
-  var frequency = frequency_(data.installment_type || 'monthly');
-  var contract = contract_(principal, profitPercent, installments);
   var id = nextNumericId_('customers', 'CUSTOMER_SEQUENCE');
   var now = now_();
   var row = {
     id: id,
     name: text_(data.name),
     phone: text_(data.phone),
-    principal: principal,
-    profit_percent: profitPercent,
-    installments: installments,
-    paid_installments: 0,
-    start_date: deliveryDate,
     notes: text_(data.notes),
-    status: 'منتظم',
     created_at: now,
     address: text_(data.address),
-    guarantor_name: text_(data.guarantor_name),
-    guarantor_phone: text_(data.guarantor_phone),
-    profit_amount: contract.profit,
-    contract_total: contract.total,
-    installment_type: frequency,
-    delivery_date: deliveryDate,
-    first_due_date: firstDueDate,
-    expected_end_date: dueDate_(firstDueDate, installments - 1, frequency),
-    installment_value: contract.parts[0],
-    paid_amount: 0,
-    remaining_amount: contract.total,
-    current_installment_paid: 0,
-    current_installment_remaining: contract.parts[0],
-    next_due_date: firstDueDate,
     archived: false,
     updated_at: now
   };
@@ -284,40 +357,13 @@ function updateCustomer_(data) {
   if (!found) throw new Error('العميل غير موجود');
   if (truthy_(found.object.archived)) throw new Error('استرجع العميل من الأرشيف قبل تعديله');
 
-  ['name', 'phone', 'address', 'guarantor_name', 'guarantor_phone', 'notes'].forEach(function (key) {
+  ['name', 'phone', 'address', 'notes'].forEach(function (key) {
     if (data[key] !== undefined) found.object[key] = text_(data[key]);
   });
-  if (!found.object.name || !found.object.phone) throw new Error('الاسم والهاتف مطلوبان');
-  if (data.principal !== undefined) found.object.principal = positiveInteger_(data.principal, 'أصل المبلغ');
-  if (data.profit_percent !== undefined) {
-    found.object.profit_percent = nonNegativeNumber_(data.profit_percent, 'نسبة الربح');
-  }
-  if (data.installments !== undefined) {
-    found.object.installments = positiveInteger_(data.installments, 'عدد الأقساط');
-  }
-  if (data.installment_type !== undefined) found.object.installment_type = frequency_(data.installment_type);
-  if (hasDateValue_(data.first_due_date)) {
-    found.object.first_due_date = requireDate_(data.first_due_date, 'تاريخ أول استحقاق');
-  }
-  if (hasDateValue_(data.delivery_date)) {
-    found.object.delivery_date = requireDate_(data.delivery_date, 'تاريخ تسليم المبلغ');
-  } else if (data.delivery_date === undefined && hasDateValue_(data.start_date)) {
-    found.object.delivery_date = requireDate_(data.start_date, 'تاريخ تسليم المبلغ');
-  }
-  var preview = contract_(
-    positiveInteger_(found.object.principal, 'أصل المبلغ'),
-    nonNegativeNumber_(found.object.profit_percent, 'نسبة الربح'),
-    positiveInteger_(found.object.installments, 'عدد الأقساط')
-  );
-  var alreadyPaid = listPayments_().filter(function (payment) {
-    return number_(payment.customer_id, 0) === customerId &&
-      (text_(payment.status) || 'active') === 'active';
-  }).reduce(function (sum, payment) { return sum + integer_(payment.amount, 0); }, 0);
-  if (preview.total < alreadyPaid) throw new Error('إجمالي العقد الجديد أصغر من المبلغ المدفوع');
+  if (!found.object.name) throw new Error('اسم العميل مطلوب');
   found.object.updated_at = now_();
   writeObjectRow_(table, found.rowNumber, found.object);
-  recalculateCustomer_(customerId);
-  return findById_(readTable_('customers'), customerId).object;
+  return normalizeCustomerRow_(found.object);
 }
 
 function archiveCustomer_(data) {
@@ -335,15 +381,115 @@ function setArchived_(customerId, archived) {
   var found = findById_(table, customerId);
   if (!found) throw new Error('العميل غير موجود');
   found.object.archived = archived;
-  found.object.status = archived ? 'مؤرشف' : 'منتظم';
   found.object.updated_at = now_();
   writeObjectRow_(table, found.rowNumber, found.object);
-  if (!archived) recalculateCustomer_(customerId);
-  return findById_(readTable_('customers'), customerId).object;
+  return normalizeCustomerRow_(found.object);
+}
+
+function normalizeCustomerRow_(row) {
+  return {
+    id: number_(row.id, 0),
+    name: text_(row.name),
+    phone: text_(row.phone),
+    address: text_(row.address),
+    notes: text_(row.notes),
+    archived: truthy_(row.archived),
+    created_at: dateTimeText_(row.created_at),
+    updated_at: dateTimeText_(row.updated_at)
+  };
+}
+
+function addContract_(data) {
+  var customerId = positiveInteger_(data.customer_id, 'معرف العميل');
+  var customer = findById_(readTable_('customers'), customerId);
+  if (!customer) throw new Error('العميل غير موجود');
+  if (truthy_(customer.object.archived)) throw new Error('لا يمكن إضافة عقد لعميل مؤرشف');
+
+  var principal = positiveInteger_(data.principal, 'أصل المبلغ');
+  var profitPercent = nonNegativeNumber_(data.profit_percent, 'نسبة الربح');
+  var installments = positiveInteger_(data.installments, 'عدد الأقساط');
+  var deliveryDate = requireDate_(data.delivery_date, 'تاريخ تسليم المبلغ');
+  var firstDueDate = requireDate_(data.first_due_date, 'تاريخ أول استحقاق');
+  var calculated = contract_(principal, profitPercent, installments);
+  var now = now_();
+  var row = {
+    id: nextNumericId_('contracts', 'CONTRACT_SEQUENCE'),
+    customer_id: customerId,
+    principal: principal,
+    profit_percent: profitPercent,
+    profit_amount: calculated.profit,
+    contract_total: calculated.total,
+    installments: installments,
+    installment_value: calculated.parts[0],
+    delivery_date: deliveryDate,
+    first_due_date: firstDueDate,
+    expected_end_date: dueDate_(firstDueDate, installments - 1, 'monthly'),
+    guarantor_name: text_(data.guarantor_name),
+    guarantor_phone: text_(data.guarantor_phone),
+    notes: text_(data.notes),
+    paid_amount: 0,
+    remaining_amount: calculated.total,
+    current_installment_paid: 0,
+    current_installment_remaining: calculated.parts[0],
+    next_due_date: firstDueDate,
+    status: 'منتظم',
+    archived: false,
+    created_at: now,
+    updated_at: now
+  };
+  row = enrichContract_(row, []);
+  appendObject_('contracts', row);
+  return row;
+}
+
+function updateContract_(data) {
+  var contractId = positiveInteger_(data.contract_id || data.id, 'معرف العقد');
+  var table = readTable_('contracts');
+  var found = findById_(table, contractId);
+  if (!found) throw new Error('العقد غير موجود');
+  if (truthy_(found.object.archived)) throw new Error('استرجع العقد من الأرشيف قبل تعديله');
+
+  ['guarantor_name', 'guarantor_phone', 'notes'].forEach(function (key) {
+    if (data[key] !== undefined) found.object[key] = text_(data[key]);
+  });
+  if (data.principal !== undefined) found.object.principal = positiveInteger_(data.principal, 'أصل المبلغ');
+  if (data.profit_percent !== undefined) found.object.profit_percent = nonNegativeNumber_(data.profit_percent, 'نسبة الربح');
+  if (data.installments !== undefined) found.object.installments = positiveInteger_(data.installments, 'عدد الأقساط');
+  if (hasDateValue_(data.delivery_date)) found.object.delivery_date = requireDate_(data.delivery_date, 'تاريخ تسليم المبلغ');
+  if (hasDateValue_(data.first_due_date)) found.object.first_due_date = requireDate_(data.first_due_date, 'تاريخ أول استحقاق');
+
+  var calculated = contract_(found.object.principal, found.object.profit_percent, found.object.installments);
+  var payments = indexPaymentsByContract_(listPayments_())[contractId] || [];
+  var alreadyPaid = activePaidTotal_(payments);
+  if (calculated.total < alreadyPaid) throw new Error('إجمالي العقد الجديد أصغر من المبلغ المدفوع');
+  found.object.updated_at = now_();
+  var enriched = enrichContract_(found.object, payments);
+  writeObjectRow_(table, found.rowNumber, enriched);
+  return enriched;
+}
+
+function archiveContract_(data) {
+  return setContractArchived_(positiveInteger_(data.contract_id || data.id, 'معرف العقد'), true);
+}
+
+function restoreContract_(data) {
+  return setContractArchived_(positiveInteger_(data.contract_id || data.id, 'معرف العقد'), false);
+}
+
+function setContractArchived_(contractId, archived) {
+  var table = readTable_('contracts');
+  var found = findById_(table, contractId);
+  if (!found) throw new Error('العقد غير موجود');
+  found.object.archived = archived;
+  found.object.updated_at = now_();
+  var payments = indexPaymentsByContract_(listPayments_())[contractId] || [];
+  var enriched = enrichContract_(found.object, payments);
+  writeObjectRow_(table, found.rowNumber, enriched);
+  return enriched;
 }
 
 function addPayment_(data) {
-  var customerId = positiveInteger_(data.customer_id, 'معرف العميل');
+  var contractId = positiveInteger_(data.contract_id, 'معرف العقد');
   // توافق انتقالي: الواجهة الجديدة ترسل request_id دائماً؛ القديمة تحصل على معرف فريد.
   var requestId = text_(data.request_id) || 'legacy-' + Utilities.getUuid();
   var paymentTable = readTable_('payments');
@@ -352,13 +498,22 @@ function addPayment_(data) {
   })[0];
   if (duplicate) return duplicate; // idempotent: أعد نفس النتيجة ولا تضف صفاً.
 
-  var customerTable = readTable_('customers');
-  var customer = findById_(customerTable, customerId);
+  var contractTable = readTable_('contracts');
+  var contract = findById_(contractTable, contractId);
+  if (!contract) throw new Error('العقد غير موجود');
+  var customerId = positiveInteger_(contract.object.customer_id, 'معرف العميل');
+  if (data.customer_id !== undefined && number_(data.customer_id, 0) !== customerId) {
+    throw new Error('العقد لا يعود إلى العميل المحدد');
+  }
+  var customer = findById_(readTable_('customers'), customerId);
   if (!customer) throw new Error('العميل غير موجود');
   if (truthy_(customer.object.archived)) throw new Error('لا يمكن الدفع لعميل مؤرشف');
+  if (truthy_(contract.object.archived)) throw new Error('لا يمكن الدفع لعقد مؤرشف');
 
   var amount = positiveInteger_(data.amount, 'مبلغ الدفعة');
-  var current = enrichCustomer_(customer.object, listPayments_());
+  var contractPayments = indexPaymentsByContract_(listPayments_())[contractId] || [];
+  var current = enrichContract_(contract.object, contractPayments);
+  if (current.status === 'مكتمل') throw new Error('العقد مكتمل');
   if (amount > current.remaining_amount) throw new Error('الدفعة أكبر من المبلغ المتبقي');
 
   var id = nextNumericId_('payments', 'PAYMENT_SEQUENCE');
@@ -367,6 +522,7 @@ function addPayment_(data) {
   var row = {
     id: id,
     customer_id: customerId,
+    contract_id: contractId,
     amount: amount,
     payment_date: requireDate_(data.payment_date || today_(), 'تاريخ الدفع'),
     notes: text_(data.notes),
@@ -376,11 +532,12 @@ function addPayment_(data) {
     status: 'active',
     cancellation_reason: '',
     cancelled_at: '',
+    paid_after: current.paid_amount + amount,
+    remaining_after: current.remaining_amount - amount,
     updated_at: createdAt
   };
   appendObject_('payments', row);
-  var recalculated = recalculateCustomer_(customerId);
-  row.customer = recalculated;
+  row.contract_after = recalculateContract_(contractId);
   return row;
 }
 
@@ -396,7 +553,7 @@ function cancelPayment_(data) {
   found.object.cancelled_at = now_();
   found.object.updated_at = now_();
   writeObjectRow_(table, found.rowNumber, found.object);
-  recalculateCustomer_(number_(found.object.customer_id, 0));
+  recalculateContract_(positiveInteger_(found.object.contract_id, 'معرف العقد'));
   return found.object;
 }
 
@@ -424,18 +581,26 @@ function updateSettings_(data) {
   return getSettings_();
 }
 
-function recalculateCustomer_(customerId) {
-  var table = readTable_('customers');
-  var found = findById_(table, customerId);
-  if (!found) throw new Error('العميل غير موجود');
-  var enriched = enrichCustomer_(found.object, listPayments_());
+function recalculateContract_(contractId) {
+  var table = readTable_('contracts');
+  var found = findById_(table, contractId);
+  if (!found) throw new Error('العقد غير موجود');
+  var payments = indexPaymentsByContract_(listPayments_())[contractId] || [];
+  var enriched = enrichContract_(found.object, payments);
   enriched.updated_at = now_();
   writeObjectRow_(table, found.rowNumber, enriched);
   return enriched;
 }
 
-function enrichCustomer_(row, payments) {
-  row.start_date = dateText_(row.start_date);
+function activePaidTotal_(payments) {
+  return payments.reduce(function (sum, payment) {
+    return (text_(payment.status) || 'active') === 'active'
+      ? sum + positiveInteger_(payment.amount, 'مبلغ الدفعة')
+      : sum;
+  }, 0);
+}
+
+function enrichContract_(row, payments) {
   row.delivery_date = dateText_(row.delivery_date);
   row.first_due_date = dateText_(row.first_due_date);
   row.created_at = dateTimeText_(row.created_at);
@@ -443,36 +608,32 @@ function enrichCustomer_(row, payments) {
   var principal = integer_(row.principal, 0);
   var profitPercent = number_(row.profit_percent, 0);
   var count = Math.max(1, integer_(row.installments, 1));
-  var frequency = frequency_(row.installment_type || 'monthly');
   var firstDue = dateText_(row.first_due_date);
   var scheduleFirstDue = firstDue || today_();
   var contract = contract_(principal, profitPercent, count);
-  var paid = payments.filter(function (payment) {
-    return number_(payment.customer_id, 0) === number_(row.id, 0) &&
-      (text_(payment.status) || 'active') === 'active';
-  }).reduce(function (sum, payment) { return sum + integer_(payment.amount, 0); }, 0);
+  var paid = activePaidTotal_(payments);
+  if (paid > contract.total) throw new Error('المبلغ المدفوع أكبر من إجمالي العقد');
   paid = Math.min(paid, contract.total);
   var allocation = allocate_(contract.parts, paid);
   var currentIndex = allocation.paidByInstallment.findIndex(function (value, index) {
     return value < contract.parts[index];
   });
   var archived = truthy_(row.archived) || text_(row.status) === 'مؤرشف';
-  var nextDue = currentIndex === -1 ? '' : dueDate_(scheduleFirstDue, currentIndex, frequency);
+  var nextDue = currentIndex === -1 ? '' : dueDate_(scheduleFirstDue, currentIndex, 'monthly');
   var status = archived ? 'مؤرشف' : currentIndex === -1 ? 'مكتمل' :
     nextDue < today_() ? 'متأخر' : nextDue === today_() ? 'مستحق اليوم' : 'منتظم';
   row.id = number_(row.id, 0);
+  row.customer_id = number_(row.customer_id, 0);
   row.principal = principal;
   row.profit_percent = profitPercent;
   row.installments = count;
   row.profit_amount = contract.profit;
   row.contract_total = contract.total;
-  row.installment_type = frequency;
   row.first_due_date = firstDue;
-  row.expected_end_date = dueDate_(scheduleFirstDue, count - 1, frequency);
+  row.expected_end_date = dueDate_(scheduleFirstDue, count - 1, 'monthly');
   row.installment_value = contract.parts[0];
   row.paid_amount = paid;
   row.remaining_amount = contract.total - paid;
-  row.paid_installments = allocation.completed;
   row.current_installment_paid = currentIndex === -1 ? 0 : allocation.paidByInstallment[currentIndex];
   row.current_installment_remaining = currentIndex === -1 ? 0 :
     contract.parts[currentIndex] - allocation.paidByInstallment[currentIndex];
@@ -486,6 +647,9 @@ function contract_(principal, percent, count) {
   var basisPoints = Math.round(percent * 100);
   var profit = Math.round(principal * basisPoints / 10000);
   var total = principal + profit;
+  if (!Number.isSafeInteger(profit) || !Number.isSafeInteger(total)) {
+    throw new Error('القيم المالية غير صالحة');
+  }
   var regular = Math.floor(total / count);
   var parts = [];
   for (var i = 0; i < count; i += 1) parts.push(i === count - 1 ? total - regular * (count - 1) : regular);
@@ -675,8 +839,8 @@ function text_(value) { return value === null || value === undefined ? '' : Stri
 function number_(value, fallback) { var parsed = Number(value); return isFinite(parsed) ? parsed : fallback; }
 function integer_(value, fallback) { var parsed = Math.round(number_(value, fallback)); return isFinite(parsed) ? parsed : fallback; }
 function nonNegativeNumber_(value, label) { var parsed = number_(value, NaN); if (!isFinite(parsed) || parsed < 0) throw new Error(label + ' غير صالح'); return parsed; }
-function positiveInteger_(value, label) { var parsed = integer_(value, NaN); if (!isFinite(parsed) || parsed <= 0) throw new Error(label + ' غير صالح'); return parsed; }
-function nonNegativeInteger_(value, label) { var parsed = integer_(value, NaN); if (!isFinite(parsed) || parsed < 0) throw new Error(label + ' غير صالح'); return parsed; }
+function positiveInteger_(value, label) { var parsed = number_(value, NaN); if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(label + ' غير صالح'); return parsed; }
+function nonNegativeInteger_(value, label) { var parsed = number_(value, NaN); if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(label + ' غير صالح'); return parsed; }
 function requireText_(value, message) { var parsed = text_(value); if (!parsed) throw new Error(message); return parsed; }
 function frequency_(value) { var parsed = text_(value).toLowerCase(); if (parsed === 'weekly' || parsed === 'أسبوعي') return 'weekly'; if (parsed === 'monthly' || parsed === 'شهري' || !parsed) return 'monthly'; throw new Error('نوع الأقساط غير صالح'); }
 function truthy_(value) { return value === true || String(value).toLowerCase() === 'true' || String(value) === '1'; }

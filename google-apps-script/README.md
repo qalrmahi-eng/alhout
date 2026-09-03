@@ -2,32 +2,26 @@
 
 هذا المجلد هو مصدر نسخة الخادم التي تُلصق في مشروع Apps Script المرتبط بملف Google Sheets. لا يحتوي على أسرار ولا يتصل بالملف أثناء اختبارات Next.js.
 
-## الأعمدة
+## الأوراق
 
-الأعمدة القديمة محفوظة في أماكنها:
+- `customers`: هوية الشخص فقط (`id, name, phone, address, notes, archived, created_at, updated_at`).
+- `contracts`: بيانات العقد المالية والكفيل والاستحقاق والأرصدة والحالة.
+- `payments`: تحتفظ بـ`customer_id` وتربط مالياً عبر `contract_id`، وتحفظ `paid_after` و`remaining_after` للوصولات.
+- `settings`: يبقى `capital` للتوافق القديم فقط ولا يعتمد عليه منطق العقود الجديد.
 
-- `settings`: `id, system_name, capital, default_profit_percent`
-- `customers`: `id, name, phone, principal, profit_percent, installments, paid_installments, start_date, notes, status, created_at`
-- `payments`: `id, customer_id, amount, payment_date, notes, created_at`
-
-تضيف الترقية في نهاية كل ورقة فقط:
-
-- `settings`: `default_installment_type, receipt_footer, updated_at`
-- `customers`: `address, guarantor_name, guarantor_phone, profit_amount, contract_total, installment_type, delivery_date, first_due_date, expected_end_date, installment_value, paid_amount, remaining_amount, current_installment_paid, current_installment_remaining, next_due_date, archived, updated_at`
-- `payments`: `request_id, receipt_number, status, cancellation_reason, cancelled_at, updated_at`
+لا تحذف الترقية الأعمدة القديمة من ورقة `customers` الموجودة؛ تتوقف الشفرة الجديدة عن استعمالها، بينما تحصل الملفات الجديدة على نموذج الهوية المختصر.
 
 ## تشغيل الترقية بأمان
 
-1. أنشئ نسخة مستقلة من ملف Sheets من واجهة Google Drive.
-2. الصق `Code.gs` في مشروع Apps Script تجريبي مرتبط بنسخة الملف.
-3. شغّل `upgradeSheets()` دون معاملات. الوضع الافتراضي `dryRun` ويكتب الخطة في Execution log فقط ولا يغير أي خلية.
-4. راجع الخطة وتأكد أن الأعمدة المقترحة هي الناقصة فعلاً، ثم شغّل الدالة الرسمية التالية من محرر Apps Script:
+1. الصق `Code.gs` في مشروع Apps Script تجريبي مرتبط بنسخة الملف.
+2. شغّل `upgradeSheets()` دون معاملات. الوضع الافتراضي `dryRun` ويكتب الخطة في Execution log فقط ولا يغير أي خلية.
+3. راجع الخطة وتأكد أن `contracts` ستُنشأ وأن أعمدة الدفعات الناقصة صحيحة، ثم شغّل:
 
    ```js
    applySheetsUpgrade()
    ```
 
-5. قبل أي تغيير مادي، ينشئ السكربت أوراقًا باسم `Backup_<sheet>_<timestamp>`. كما يسجل النتيجة في `migration_report`. إعادة التشغيل آمنة لأنها لا تضيف رأسًا موجودًا ولا ترتب أو تمسح أي صف.
+4. قبل أي تغيير مادي، ينشئ السكربت نسخ `Backup_<sheet>_<timestamp>` لكل ورقة حالية ويسجل النتيجة في `migration_report`. لا يحذف أو يعيد ترتيب أي صف.
 
 تُقارن العناوين بعد تطبيع المسافات وNBSP وBOM والمحارف صفرية العرض وعلامات RTL/LTR وحالة الأحرف، مع إبقاء نص العنوان وترتيب العمود الفعلي دون تغيير. إذا أصبحت عناوين متعددة متساوية بعد التطبيع، تتوقف الترقية برسالة تحدد الورقة وأرقام الأعمدة؛ يجب تصحيح التكرار يدويًا قبل تشغيل `applySheetsUpgrade()`.
 

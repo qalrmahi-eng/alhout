@@ -1,6 +1,6 @@
 import type {
   ContractSummary,
-  Customer,
+  Contract,
   CustomerStatus,
   InstallmentFrequency,
   InstallmentRow,
@@ -149,30 +149,26 @@ export function deriveCustomerStatus(
   return 'منتظم';
 }
 
-function isArchived(customer: Customer) {
-  return customer.archived === true || customer.archived === 'true' || customer.status === 'مؤرشف';
+function isArchived(contract: Contract) {
+  return contract.archived === true || contract.archived === 'true' || contract.status === 'مؤرشف';
 }
 
 export function summarizeContract(
-  customer: Customer,
-  payments: Payment[],
+  contract: Contract,
+  contractPayments: Payment[],
   today = baghdadToday(),
 ): ContractSummary {
   const { profitAmount, contractTotal } = calculateContract(
-    customer.principal,
-    customer.profit_percent,
+    contract.principal,
+    contract.profit_percent,
   );
-  const count = Math.max(1, Math.trunc(customer.installments || 1));
-  const frequency = customer.installment_type ?? 'monthly';
-  const firstDueDate = customer.first_due_date || today;
-  const customerPayments = payments.filter(
-    (payment) => Number(payment.customer_id) === Number(customer.id),
-  );
-  const paidAmount = Math.min(activePaidAmount(customerPayments), contractTotal);
+  const count = Math.max(1, Math.trunc(contract.installments || 1));
+  const firstDueDate = contract.first_due_date || today;
+  const paidAmount = Math.min(activePaidAmount(contractPayments), contractTotal);
   const schedule = buildSchedule({
     total: contractTotal,
     count,
-    frequency,
+    frequency: 'monthly',
     firstDueDate,
     paidAmount,
     today,
@@ -191,9 +187,21 @@ export function summarizeContract(
     currentInstallmentRemaining: current?.remaining ?? 0,
     nextDueDate: current?.dueDate ?? null,
     expectedEndDate: schedule.at(-1)?.dueDate ?? firstDueDate,
-    status: deriveCustomerStatus(schedule, isArchived(customer), today),
+    status: deriveCustomerStatus(schedule, isArchived(contract), today),
     schedule,
   };
+}
+
+export function indexPaymentsByContract(payments: Payment[]): Map<number, Payment[]> {
+  const index = new Map<number, Payment[]>();
+  for (const payment of payments) {
+    const contractId = Number(payment.contract_id);
+    if (!Number.isSafeInteger(contractId) || contractId <= 0) continue;
+    const rows = index.get(contractId);
+    if (rows) rows.push(payment);
+    else index.set(contractId, [payment]);
+  }
+  return index;
 }
 
 export function validatePayment(amountInput: number, remainingInput: number): number {

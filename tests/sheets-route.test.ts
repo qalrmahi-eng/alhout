@@ -20,9 +20,10 @@ beforeEach(() => {
 });
 
 describe('/api/sheets', () => {
-  it('يمرر تاريخ التسليم وأول استحقاق منفصلين إلى Apps Script', async () => {
+  it('يمرر إنشاء العقد ومعرف العميل إلى Apps Script', async () => {
     const data = {
-      name: 'عميل اختبار',
+      customer_id: 15,
+      principal: 5_000_000,
       delivery_date: '2026-07-27',
       first_due_date: '2026-08-10',
     };
@@ -30,12 +31,12 @@ describe('/api/sheets', () => {
       new Request('http://localhost/api/sheets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'add_customer', data }),
+        body: JSON.stringify({ action: 'add_contract', data }),
       }),
     );
 
     expect(response.status).toBe(200);
-    expect(callAppsScript).toHaveBeenCalledWith('add_customer', data);
+    expect(callAppsScript).toHaveBeenCalledWith('add_contract', data);
     expect(callAppsScript).toHaveBeenCalledTimes(1);
   });
 });

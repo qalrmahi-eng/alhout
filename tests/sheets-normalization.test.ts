@@ -32,12 +32,7 @@ describe('تطبيع استجابات Google Sheets', () => {
         id: '9',
         name: 12345,
         phone: 7701234567,
-        principal: '1000000',
-        profit_percent: '10',
-        installments: '10',
         archived: 'false',
-        paid_amount: '25000',
-        next_due_date: 20260801,
         updated_at: 20260727,
       },
     ]);
@@ -48,12 +43,7 @@ describe('تطبيع استجابات Google Sheets', () => {
       id: 9,
       name: '12345',
       phone: '7701234567',
-      principal: 1_000_000,
-      profit_percent: 10,
-      installments: 10,
       archived: false,
-      paid_amount: 25_000,
-      next_due_date: '',
       updated_at: '',
     });
     expect(() => customerAvatar(customer.name)).not.toThrow();
@@ -101,6 +91,7 @@ describe('تطبيع استجابات Google Sheets', () => {
         request_id: 88,
         receipt_number: null,
         customer_id: '9',
+        contract_id: '101',
         amount: '25000',
         payment_date: 20260727,
         notes: null,
@@ -116,6 +107,7 @@ describe('تطبيع استجابات Google Sheets', () => {
         request_id: '88',
         receipt_number: '',
         customer_id: 9,
+        contract_id: 101,
         amount: 25_000,
         payment_date: '20260727',
         notes: '',
@@ -127,9 +119,9 @@ describe('تطبيع استجابات Google Sheets', () => {
   });
 
   it('لا تستخدم لوحة العملاء عمليات نصية مباشرة على بيانات غير موثوقة', () => {
-    const dashboard = readFileSync('features/dashboard/dashboard-app.tsx', 'utf8');
+    const dashboard = readFileSync('features/customers/customer-workspace.tsx', 'utf8');
 
-    expect(dashboard).toContain('customerMatchesSearch(customer, normalized)');
+    expect(dashboard).toContain('customerMatchesSearch(customer, props.query)');
     expect(dashboard).toContain('customerAvatar(customer.name)');
     expect(dashboard).not.toContain('customer.name.slice(');
     expect(dashboard).not.toContain('customer.name.toLowerCase(');
@@ -145,18 +137,35 @@ describe('تطبيع استجابات Google Sheets', () => {
         default_profit_percent: '10',
       },
       customers: [{ id: '9', name: null, phone: 7701234567 }],
+      contracts: [{
+        id: '101', customer_id: '9', principal: '1000000', profit_percent: '10',
+        profit_amount: '100000', contract_total: '1100000', installments: '10',
+        installment_value: '110000', delivery_date: '2026-07-01',
+        first_due_date: '2026-08-01', expected_end_date: '2027-05-01',
+        paid_amount: '25000', remaining_amount: '1075000',
+        current_installment_paid: '25000', current_installment_remaining: '85000',
+        status: 'regular',
+      }],
       payments: [{
         id: '4',
         customer_id: '9',
+        contract_id: '101',
         amount: '25000',
         payment_date: 20260727,
       }],
+      summary: {
+        total_principal: '1000000', total_contract_value: '1100000', total_received: '25000',
+        total_remaining: '1075000', total_expected_profit: '100000', received_this_month: '25000',
+        customers_count: '1', active_contracts_count: '1', completed_contracts_count: '0', overdue_contracts_count: '0',
+      },
     });
 
     await expect(getDashboard()).resolves.toMatchObject({
       settings: { id: 1, system_name: '2026', capital: 500_000 },
       customers: [{ id: 9, name: 'بدون اسم', phone: '7701234567' }],
-      payments: [{ id: 4, customer_id: 9, amount: 25_000, payment_date: '20260727' }],
+      contracts: [{ id: 101, customer_id: 9, principal: 1_000_000, status: 'منتظم' }],
+      payments: [{ id: 4, customer_id: 9, contract_id: 101, amount: 25_000, payment_date: '20260727' }],
+      summary: { total_principal: 1_000_000, total_remaining: 1_075_000, customers_count: 1 },
     });
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({
