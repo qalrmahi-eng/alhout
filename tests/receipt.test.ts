@@ -66,4 +66,16 @@ describe('بيانات الوصل', () => {
     expect(receiptModal).toContain('حُفظت الدفعة، لكن تعذر إنشاء صورة الوصل');
     expect(receiptModal).not.toContain('cancelPayment');
   });
+
+  it('يفصل وصل الزبون عن تفاصيل التسعير الداخلية', () => {
+    const receiptModal = readFileSync('features/receipts/receipt-modal.tsx', 'utf8');
+    const adminView = readFileSync('features/contracts/contract-details.tsx', 'utf8');
+    expect(receiptModal).not.toContain('رقم العقد');
+    expect(receiptModal).not.toContain('أصل المبلغ');
+    expect(receiptModal).not.toContain('نسبة الربح');
+    expect(receiptModal).not.toContain('مبلغ الربح');
+    expect(adminView).toContain('المبلغ المسلم');
+    expect(adminView).toContain('نسبة الربح');
+    expect(adminView).toContain('profit_amount');
+  });
 });

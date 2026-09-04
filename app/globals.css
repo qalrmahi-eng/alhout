@@ -287,15 +287,17 @@ td { padding: .85rem .8rem; border-top: 1px solid var(--line); font-size: .75rem
 .contract-facts { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .8rem; }
 .contract-facts span { padding: .3rem .5rem; color: var(--muted); background: var(--surface); border-radius: 99px; font-size: .63rem; }
 .contract-header-panel { border-top: 3px solid var(--teal); }
-.financial-summary-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .7rem; margin-top: 1.2rem; }
+.financial-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); align-items: stretch; gap: .7rem; margin-top: 1.2rem; }
 .financial-summary-grid.compact-grid { grid-template-columns: repeat(2, 1fr); }
-.financial-metric { min-width: 0; padding: .8rem; background: var(--surface); border: 1px solid transparent; border-radius: .85rem; }
+.financial-metric { min-width: 0; min-height: 76px; display: flex; flex-direction: column; justify-content: space-between; padding: .8rem; background: var(--surface); border: 1px solid transparent; border-radius: .85rem; }
 .financial-metric small, .financial-metric strong { display: block; }.financial-metric small { color: var(--muted); font-size: .63rem; }.financial-metric strong { margin-top: .25rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .78rem; }
 .financial-metric.accent { color: #065f56; background: #ccfbf1; border-color: #99f6e4; }.financial-metric.accent small { color: #0f766e; }
 .dark .financial-metric.accent { color: #ccfbf1; background: #134e4a; border-color: #115e59; }.dark .financial-metric.accent small { color: #5eead4; }
-.detail-columns { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .55fr); gap: 1rem; }
-.info-list { display: grid; gap: .25rem; }
-.info-list > div { display: flex; justify-content: space-between; gap: 1rem; padding: .72rem .2rem; border-bottom: 1px dashed var(--line); font-size: .72rem; }
+.detail-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 1rem; }
+.detail-columns > .panel { height: 100%; }
+.info-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
+.info-list > div { min-width: 0; display: flex; justify-content: space-between; gap: .75rem; padding: .7rem; background: var(--surface); border-radius: .72rem; font-size: .7rem; }
+.info-list > .info-wide { grid-column: 1 / -1; }
 .info-list span { color: var(--muted); }.info-list b { text-align: left; }
 .contract-form-layout { display: grid; grid-template-columns: minmax(0, 1fr) 270px; align-items: start; gap: 1.2rem; }
 .contract-preview { position: sticky; top: 0; padding: 1rem; color: white; background: linear-gradient(145deg, #0b2b42, #0f766e); border-radius: 1rem; }
@@ -332,8 +334,16 @@ td { padding: .85rem .8rem; border-top: 1px solid var(--line); font-size: .75rem
 .reminder-row small, .reminder-row strong, .reminder-row em { display: block; }.reminder-row small { color: var(--muted); font-size: .61rem; }.reminder-row strong { margin-top: .18rem; font-size: .76rem; }.reminder-row em { margin-top: .15rem; color: var(--muted); font-size: .62rem; font-style: normal; }
 .reminder-person a { display: block; margin-top: .2rem; color: var(--muted); font-size: .67rem; direction: ltr; text-align: right; }.reminder-actions { display: flex; gap: .4rem; }
 .late-text { color: #e11d48 !important; }
+.mobile-payment-list { display: none; }
+.mobile-payment-card { padding: .8rem; border: 1px solid var(--line); border-radius: .85rem; background: var(--card); }
+.mobile-payment-card.cancelled { opacity: .72; border-color: color-mix(in srgb, #e11d48 30%, var(--line)); }
+.mobile-payment-card header, .mobile-payment-card > div, .mobile-payment-card footer { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+.mobile-payment-card header strong { font-size: .86rem; }.mobile-payment-card > div { margin-top: .55rem; color: var(--muted); font-size: .68rem; }.mobile-payment-card p { margin-top: .55rem; color: var(--muted); font-size: .67rem; line-height: 1.6; }.mobile-payment-card footer { justify-content: flex-end; margin-top: .7rem; }
 
-input[type="number"], input[type="date"], input[type="tel"] { direction: ltr; text-align: right; }
+input[type="number"], input[type="tel"] { direction: ltr; text-align: right; }
+input[type="date"] { direction: ltr !important; unicode-bidi: plaintext; text-align: left !important; }
+input[type="date"]::-webkit-date-and-time-value { direction: ltr; unicode-bidi: plaintext; text-align: left; }
+input[type="date"]::-webkit-datetime-edit { direction: ltr; unicode-bidi: isolate; }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }::-webkit-scrollbar-track { background: transparent; }::-webkit-scrollbar-thumb { background: #94a3b866; border-radius: 99px; }
 
@@ -389,14 +399,19 @@ input[type="number"], input[type="date"], input[type="tel"] { direction: ltr; te
   .report-metrics { grid-template-columns: 1fr 1fr; }.statement-summary { grid-template-columns: 1fr 1fr; }
   .reminder-tabs { grid-template-columns: repeat(2, 1fr); }
   .reminder-row { grid-template-columns: 1fr 1fr; }.reminder-person, .reminder-actions { grid-column: 1/-1; }.reminder-actions > button { flex: 1; }
+  .info-list { grid-template-columns: 1fr; }.info-list > .info-wide { grid-column: auto; }
+  .desktop-payment-table { display: none; }.mobile-payment-list { display: grid; gap: .65rem; margin-top: 1rem; }
 }
 
 @media print {
   body * { visibility: hidden !important; }
-  .receipt-paper, .receipt-paper *, .statement-print-area, .statement-print-area * { visibility: visible !important; }
-  .receipt-paper, .statement-print-area { position: absolute; inset: 0; width: 100%; margin: 0; color: #10233a; background: white; border: 0; border-radius: 0; box-shadow: none; }
+  .receipt-paper, .receipt-paper *, .statement-print-area, .statement-print-area *, .contract-print-area, .contract-print-area * { visibility: visible !important; }
+  .receipt-paper, .statement-print-area, .contract-print-area { position: absolute; inset: 0; width: 100%; margin: 0; color: #10233a; background: white; border: 0; border-radius: 0; box-shadow: none; }
   .statement-print-area .table-wrap { overflow: visible; }
   .statement-print-area table { white-space: normal; }
+  .contract-print-area .table-wrap { overflow: visible; max-height: none; }
+  .contract-print-area table { white-space: normal; }
+  html.receipt-open .statement-print-area, html.receipt-open .contract-print-area { display: none !important; }
   .no-print { display: none !important; }
   @page { size: A4; margin: 10mm; }
 }

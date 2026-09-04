@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowRight, CalendarClock, Phone, Plus, Search, Settings, WalletCards } from 'lucide-react';
+import { ArrowRight, CalendarClock, Phone, Plus, Search, Settings, Trash2, WalletCards } from 'lucide-react';
 import { EmptyState, StatusBadge } from '@/components/business-ui';
 import { customerAvatar, customerMatchesSearch } from '@/lib/sheets';
 import { formatContractNumber, formatDate, formatIqd } from '@/lib/formatters';
@@ -14,6 +14,7 @@ type Props = {
   onQuery: (value: string) => void;
   onSelectCustomer: (id: number | null) => void;
   onEditCustomer: (customer: Customer) => void;
+  onDeleteCustomer: (customer: Customer) => void;
   onAddContract: (customer: Customer) => void;
   onOpenContract: (contract: ContractView) => void;
   onPay: (contract: ContractView) => void;
@@ -51,6 +52,7 @@ export default function CustomerWorkspace(props: Props) {
             <div className="flex flex-wrap gap-2">
               <button className="secondary-button compact" onClick={() => props.onEditCustomer(selected)}><Settings size={16} /> تعديل العميل</button>
               <button className="primary-button compact" onClick={() => props.onAddContract(selected)}><Plus size={16} /> إضافة عقد</button>
+              <button className="danger-button compact" onClick={() => props.onDeleteCustomer(selected)}><Trash2 size={16} /> حذف العميل</button>
             </div>
           </div>
           <div className="profile-meta">

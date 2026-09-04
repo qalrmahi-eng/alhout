@@ -11,6 +11,7 @@ type SheetLike = {
   };
   getDataRange: () => { getValues: () => unknown[][] };
   appendRow: (values: unknown[]) => void;
+  deleteRow: (row: number) => void;
 };
 
 type GasRuntime = {
@@ -22,6 +23,7 @@ type GasRuntime = {
   addContract_: (data: Record<string, unknown>) => Record<string, unknown>;
   addPayment_: (data: Record<string, unknown>) => Record<string, unknown>;
   cancelPayment_: (data: Record<string, unknown>) => Record<string, unknown>;
+  permanentlyDeleteCustomer_: (data: Record<string, unknown>) => Record<string, unknown>;
   listContracts_: () => Record<string, unknown>[];
   listPayments_: () => Record<string, unknown>[];
 };
@@ -41,6 +43,7 @@ function fakeSheet(name: string, headers: string[], rows: unknown[][] = []) {
     }),
     getDataRange: () => ({ getValues: () => data.map((row) => row.slice()) }),
     appendRow: (values) => { data.push(values.slice()); },
+    deleteRow: (row) => { data.splice(row - 1, 1); },
   };
   return { sheet, data };
 }
@@ -136,9 +139,15 @@ describe('سيناريو Phase 1 في Apps Script', () => {
       delivery_date: '2026-01-01', first_due_date: '2026-01-31',
     });
     expect(first).toMatchObject({ profit_amount: 1_000_000, contract_total: 6_000_000, installment_value: 600_000 });
-    gas.addPayment_({ contract_id: first.id, amount: 600_000, payment_date: '2026-01-01', request_id: 'a-1' });
-    gas.addPayment_({ contract_id: first.id, amount: 300_000, payment_date: '2026-01-02', request_id: 'a-2' });
-    gas.addPayment_({ contract_id: first.id, amount: 900_000, payment_date: '2026-01-03', request_id: 'a-3' });
+    const equalInstallment = gas.addPayment_({ contract_id: first.id, amount: 600_000, payment_date: '2026-01-01', request_id: 'a-1' });
+    expect(equalInstallment).toMatchObject({ paid_after: 600_000, remaining_after: 5_400_000 });
+    expect(equalInstallment.contract_after).toMatchObject({ next_due_date: '2026-02-28' });
+    const partial = gas.addPayment_({ contract_id: first.id, amount: 300_000, payment_date: '2026-01-02', request_id: 'a-2' });
+    expect(partial).toMatchObject({ paid_after: 900_000, remaining_after: 5_100_000 });
+    expect(partial.contract_after).toMatchObject({ current_installment_remaining: 300_000 });
+    const multiInstallment = gas.addPayment_({ contract_id: first.id, amount: 900_000, payment_date: '2026-01-03', request_id: 'a-3' });
+    expect(multiInstallment).toMatchObject({ paid_after: 1_800_000, remaining_after: 4_200_000 });
+    expect(multiInstallment.contract_after).toMatchObject({ next_due_date: '2026-04-30' });
 
     const second = gas.addContract_({
       customer_id: 15, principal: 3_000_000, profit_percent: 10, installments: 6,
@@ -184,5 +193,16 @@ describe('سيناريو Phase 1 في Apps Script', () => {
       new_contracts_count: 1,
       new_contracts_principal: 3_000_000,
     });
+
+    expect(gas.permanentlyDeleteCustomer_({ customer_id: 15 })).toEqual({
+      customer_id: 15,
+      deleted_customers: 1,
+      deleted_contracts: 2,
+      deleted_payments: 4,
+    });
+    expect(gas.readTable_('customers').rows.filter((row) => row.id !== '')).toHaveLength(0);
+    expect(gas.listContracts_()).toHaveLength(0);
+    expect(gas.listPayments_()).toHaveLength(0);
+    expect(gas.readTable_('settings').rows).toHaveLength(1);
   });
 });

@@ -12,6 +12,7 @@ const ALLOWED_ACTIONS = new Set([
   'update_customer',
   'archive_customer',
   'restore_customer',
+  'delete_customer_permanently',
   'add_contract',
   'update_contract',
   'archive_contract',

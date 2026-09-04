@@ -90,6 +90,7 @@ function dispatch_(action, data, trackingId) {
     update_customer: updateCustomer_,
     archive_customer: archiveCustomer_,
     restore_customer: restoreCustomer_,
+    delete_customer_permanently: permanentlyDeleteCustomer_,
     add_contract: addContract_,
     update_contract: updateContract_,
     archive_contract: archiveContract_,
@@ -97,7 +98,7 @@ function dispatch_(action, data, trackingId) {
     add_payment: addPayment_,
     cancel_payment: cancelPayment_,
     update_settings: updateSettings_,
-    // توافق انتقالي: لا حذف نهائي.
+    // توافق انتقالي: delete_customer القديم يبقى أرشفة، والحذف النهائي له Action صريح.
     delete_customer: archiveCustomer_,
     delete_payment: cancelPaymentLegacy_
   };
@@ -374,6 +375,46 @@ function archiveCustomer_(data) {
 function restoreCustomer_(data) {
   var customerId = positiveInteger_(data.customer_id || data.id, 'معرف العميل');
   return setArchived_(customerId, false);
+}
+
+function permanentlyDeleteCustomer_(data) {
+  var customerId = positiveInteger_(data.customer_id || data.id, 'معرف العميل');
+  var customerTable = readTable_('customers');
+  var customer = findById_(customerTable, customerId);
+  if (!customer) throw new Error('العميل غير موجود');
+
+  var contractTable = readTable_('contracts');
+  var paymentTable = readTable_('payments');
+  var contractIds = Object.create(null);
+  var contractRows = [];
+  contractTable.rows.forEach(function (contract, index) {
+    if (number_(contract.customer_id, 0) !== customerId) return;
+    contractIds[number_(contract.id, 0)] = true;
+    contractRows.push(index + 2);
+  });
+  var paymentRows = [];
+  paymentTable.rows.forEach(function (payment, index) {
+    var directCustomerMatch = number_(payment.customer_id, 0) === customerId;
+    var contractMatch = contractIds[number_(payment.contract_id, 0)] === true;
+    if (directCustomerMatch || contractMatch) paymentRows.push(index + 2);
+  });
+
+  // حذف الأبناء أولاً يمنع ترك مراجع يتيمة حتى إذا تعثرت خطوة لاحقة.
+  deleteRowsDescending_(paymentTable.sheet, paymentRows);
+  deleteRowsDescending_(contractTable.sheet, contractRows);
+  customerTable.sheet.deleteRow(customer.rowNumber);
+  return {
+    customer_id: customerId,
+    deleted_customers: 1,
+    deleted_contracts: contractRows.length,
+    deleted_payments: paymentRows.length
+  };
+}
+
+function deleteRowsDescending_(sheet, rowNumbers) {
+  rowNumbers.slice().sort(function (a, b) { return b - a; }).forEach(function (rowNumber) {
+    sheet.deleteRow(rowNumber);
+  });
 }
 
 function setArchived_(customerId, archived) {

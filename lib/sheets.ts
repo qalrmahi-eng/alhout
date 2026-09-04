@@ -289,6 +289,20 @@ export const archiveCustomer = (customerId: number) =>
   request('archive_customer', normalizeCustomer, { customer_id: customerId });
 export const restoreCustomer = (customerId: number) =>
   request('restore_customer', normalizeCustomer, { customer_id: customerId });
+export const deleteCustomerPermanently = (customerId: number) =>
+  request(
+    'delete_customer_permanently',
+    (value) => {
+      const record = asRecord(value);
+      return {
+        customer_id: number(record.customer_id),
+        deleted_customers: number(record.deleted_customers),
+        deleted_contracts: number(record.deleted_contracts),
+        deleted_payments: number(record.deleted_payments),
+      };
+    },
+    { customer_id: customerId },
+  );
 export const addPayment = (data: Record<string, unknown>) =>
   request('add_payment', normalizePayment, data);
 export const cancelPayment = (paymentId: number, cancellationReason: string) =>

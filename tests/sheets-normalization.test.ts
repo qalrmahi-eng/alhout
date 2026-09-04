@@ -177,8 +177,8 @@ describe('تطبيع استجابات Google Sheets', () => {
   it('يستخدم التحميل المنطقي استجابة dashboard واحدة', () => {
     const dashboard = readFileSync('features/dashboard/dashboard-app.tsx', 'utf8');
     const loadFunction = dashboard.slice(
-      dashboard.indexOf('async function load('),
-      dashboard.indexOf('useEffect(() =>', dashboard.indexOf('async function load(')),
+      dashboard.indexOf('const load = useCallback('),
+      dashboard.indexOf('useEffect(() =>', dashboard.indexOf('const load = useCallback(')),
     );
 
     expect(loadFunction).toContain('await getDashboard()');

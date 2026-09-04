@@ -34,6 +34,7 @@ import { baghdadToday, indexPaymentsByContract, summarizeContract } from '@/lib/
 import {
   archiveContract,
   cancelPayment,
+  deleteCustomerPermanently,
   getDashboard,
   restoreContract,
   updateSettings,
@@ -92,6 +93,7 @@ export default function DashboardApp({ username }: { username: string }) {
   const [paymentContract, setPaymentContract] = useState<ContractView | null>(null);
   const [cancelTarget, setCancelTarget] = useState<Payment | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<ContractView | null>(null);
+  const [deleteCustomerTarget, setDeleteCustomerTarget] = useState<Customer | null>(null);
   const [receipt, setReceipt] = useState<{ customer: Customer; contract: Contract; payment: Payment; summary: ContractSummary; autoPrint?: boolean } | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -196,7 +198,7 @@ export default function DashboardApp({ username }: { username: string }) {
     <main className="main-content">
       <header className="topbar">
         <div className="flex items-center gap-3"><button className="icon-button lg:hidden" onClick={() => setSidebarOpen(true)}><Menu size={21} /></button><div><p className="text-xs font-bold text-cyan-600">لوحة التحكم</p><h1 className="text-xl font-black">{selectedContract ? 'تفاصيل العقد' : navigation.find((item) => item.id === section)?.label}</h1></div></div>
-        <div className="top-actions"><button className="icon-button" onClick={() => void load(true)} disabled={refreshing}><RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} /></button><button className="secondary-button compact" onClick={() => setCustomerModal(null)}><Plus size={16} /> عميل</button><button className="primary-button compact" onClick={() => setContractModal({ contract: null, customerId: selectedCustomerId || undefined })} disabled={!customers.length}><Plus size={16} /> عقد</button></div>
+        <div className="top-actions"><button className="icon-button" onClick={() => void load(true)} disabled={refreshing}><RefreshCw size={18} className={refreshing ? 'animate-spin' : ''} /></button><button className="secondary-button compact" onClick={() => setCustomerModal(null)}><Plus size={16} /> عميل</button></div>
       </header>
       <div className="content-wrap">
         {selectedContract ? <ContractDetails
@@ -212,7 +214,7 @@ export default function DashboardApp({ username }: { username: string }) {
           onWhatsAppError={(message) => notify(message, 'error')}
         /> : <>
           {section === 'dashboard' && <DashboardOverview summary={summary} contracts={contractViews} payments={payments} today={today} onPay={setPaymentContract} onNavigate={go} />}
-          {section === 'customers' && <CustomerWorkspace customers={customers} contracts={contractViews} query={query} selectedCustomerId={selectedCustomerId} onQuery={setQuery} onSelectCustomer={setSelectedCustomerId} onEditCustomer={setCustomerModal} onAddContract={(customer) => setContractModal({ contract: null, customerId: customer.id })} onOpenContract={(contract) => setSelectedContractId(contract.id)} onPay={setPaymentContract} />}
+          {section === 'customers' && <CustomerWorkspace customers={customers} contracts={contractViews} query={query} selectedCustomerId={selectedCustomerId} onQuery={setQuery} onSelectCustomer={setSelectedCustomerId} onEditCustomer={setCustomerModal} onDeleteCustomer={setDeleteCustomerTarget} onAddContract={(customer) => setContractModal({ contract: null, customerId: customer.id })} onOpenContract={(contract) => setSelectedContractId(contract.id)} onPay={setPaymentContract} />}
           {section === 'reminders' && <ReminderCenter customers={customers} contracts={contractViews} today={today} onPay={setPaymentContract} notify={notify} />}
           {section === 'payments' && <PaymentHistory payments={payments} customers={customers} contracts={contracts} onReceipt={(payment) => showReceipt(payment)} onCancel={setCancelTarget} />}
           {section === 'reports' && <ReportsSection customers={customers} contracts={contractViews} payments={payments} today={today} />}
@@ -228,6 +230,7 @@ export default function DashboardApp({ username }: { username: string }) {
     {paymentContract && <PaymentDialog contract={paymentContract} today={today} onClose={() => setPaymentContract(null)} onRecorded={(saved) => { setPayments((current) => [...current, saved]); if (saved.contract_after) setContracts((current) => current.map((contract) => contract.id === saved.contract_id ? saved.contract_after! : contract)); void load(true); }} onReceipt={(payment, print) => showReceipt(payment, print)} />}
     {cancelTarget && <CancelPaymentDialog payment={cancelTarget} onClose={() => setCancelTarget(null)} onDone={async () => { setCancelTarget(null); notify('أُلغيت الدفعة وأعيد حساب العقد'); await load(true); }} />}
     {archiveTarget && <ConfirmDialog title={archiveTarget.status === 'مؤرشف' ? 'استرجاع العقد' : 'أرشفة العقد'} message={`سيبقى العقد ${archiveTarget.id} ودفعاته محفوظين بالكامل.`} confirmLabel={archiveTarget.status === 'مؤرشف' ? 'استرجاع' : 'أرشفة'} onClose={() => setArchiveTarget(null)} onConfirm={async () => { if (archiveTarget.status === 'مؤرشف') await restoreContract(archiveTarget.id); else await archiveContract(archiveTarget.id); setArchiveTarget(null); setSelectedContractId(null); notify('تم تحديث حالة العقد'); await load(true); }} />}
+    {deleteCustomerTarget && <ConfirmDialog title="حذف العميل نهائياً" message="سيتم حذف العميل وجميع عقوده ودفعاته نهائياً. لا يمكن التراجع عن هذه العملية." confirmLabel="حذف نهائي" onClose={() => setDeleteCustomerTarget(null)} onConfirm={async () => { const customerId = deleteCustomerTarget.id; const contractIds = new Set(contracts.filter((contract) => contract.customer_id === customerId).map((contract) => contract.id)); const deleted = await deleteCustomerPermanently(customerId); setCustomers((current) => current.filter((customer) => customer.id !== customerId)); setContracts((current) => current.filter((contract) => contract.customer_id !== customerId)); setPayments((current) => current.filter((payment) => payment.customer_id !== customerId && !contractIds.has(payment.contract_id))); setDeleteCustomerTarget(null); setSelectedCustomerId(null); setSelectedContractId(null); notify(`حُذف العميل مع ${deleted.deleted_contracts} عقد و${deleted.deleted_payments} دفعة`); await load(true); }} />}
     {receipt && <ReceiptModal {...receipt} settings={settings} notify={notify} onClose={() => setReceipt(null)} />}
     {toast && <div className={`toast toast-${toast.type}`}>{toast.message}</div>}
   </div>;

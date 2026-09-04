@@ -33,6 +33,11 @@ export default function ReceiptModal({
   const [working, setWorking] = useState(false);
 
   useEffect(() => {
+    document.documentElement.classList.add('receipt-open');
+    return () => document.documentElement.classList.remove('receipt-open');
+  }, []);
+
+  useEffect(() => {
     if (!autoPrint) return;
     const timer = window.setTimeout(() => window.print(), 250);
     return () => window.clearTimeout(timer);
@@ -122,26 +127,16 @@ export default function ReceiptModal({
           </div>
           <p className="receipt-statement">
             استلمنا من السيد/ة <strong>{snapshot.customerName}</strong> مبلغًا قدره{' '}
-            <strong>{formatIqd(snapshot.paymentAmount)}</strong> عن العقد المبين أدناه.
+            <strong>{formatIqd(snapshot.paymentAmount)}</strong>، وتفاصيل الرصيد بعد هذه الدفعة مبينة أدناه.
           </p>
           <div className="receipt-grid">
-            <ReceiptItem label="رقم العقد" value={`C-${String(snapshot.contractId).padStart(5, '0')}`} />
-            <ReceiptItem label="رقم الهاتف" value={snapshot.customerPhone} />
-            <ReceiptItem label="أصل المبلغ" value={formatIqd(snapshot.principal)} />
-            <ReceiptItem label="نسبة الربح" value={`${snapshot.profitPercent}%`} />
-            <ReceiptItem label="مبلغ الربح" value={formatIqd(snapshot.profitAmount)} />
-            <ReceiptItem label="إجمالي العقد" value={formatIqd(snapshot.contractTotal)} />
             <ReceiptItem label="المبلغ المستلم" value={formatIqd(snapshot.paymentAmount)} accent />
-            <ReceiptItem label="مجموع المدفوع بعد الدفعة" value={formatIqd(snapshot.paidAfterPayment)} />
+            <ReceiptItem label="قيمة القسط الشهري" value={formatIqd(snapshot.installmentValue)} />
+            <ReceiptItem label="إجمالي المدفوع بعد الدفعة" value={formatIqd(snapshot.paidAfterPayment)} />
             <ReceiptItem label="المتبقي بعد الدفعة" value={formatIqd(snapshot.remaining)} />
-            <ReceiptItem label="قيمة القسط" value={formatIqd(snapshot.installmentValue)} />
             <ReceiptItem
               label="الأقساط المكتملة / المتبقية"
               value={`${snapshot.completedInstallments} / ${snapshot.remainingInstallments}`}
-            />
-            <ReceiptItem
-              label="المدفوع / المتبقي من القسط الحالي"
-              value={`${formatIqd(snapshot.currentInstallmentPaid)} / ${formatIqd(snapshot.currentInstallmentRemaining)}`}
             />
             <ReceiptItem
               label="موعد القسط القادم"

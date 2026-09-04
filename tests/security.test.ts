@@ -39,5 +39,6 @@ describe('حدود الحماية', () => {
     );
     expect(allowedActions).toContain("'dashboard'");
     expect(allowedActions).toContain("'reports_summary'");
+    expect(allowedActions).toContain("'delete_customer_permanently'");
   });
 });
