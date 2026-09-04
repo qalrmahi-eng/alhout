@@ -1,4 +1,5 @@
 import type { Contract, Payment } from '@/types/domain';
+import { parseDateOnly } from '@/lib/dates';
 
 export type ReportPreset = 'current_month' | 'previous_month' | 'current_year';
 
@@ -7,7 +8,7 @@ function isoDate(date: Date): string {
 }
 
 export function reportPresetRange(preset: ReportPreset, today: string): { from: string; to: string } {
-  const [year, month] = today.split('-').map(Number);
+  const { year, month } = parseDateOnly(today);
   if (preset === 'current_year') return { from: `${year}-01-01`, to: `${year}-12-31` };
   const start = preset === 'current_month'
     ? new Date(Date.UTC(year, month - 1, 1))

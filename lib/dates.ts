@@ -4,22 +4,37 @@ const DAY_IN_MILLISECONDS = 86_400_000;
 const MAX_GOOGLE_SHEETS_SERIAL = 2_958_465;
 
 const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const DISPLAY_DATE_PATTERN = /^(\d{2})\/(\d{2})\/(\d{4})$/;
 const LOCAL_DATE_TIME_PATTERN =
   /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/;
+const DATE_INPUT_WITH_TIME_PATTERN =
+  /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(?:Z|[+-]\d{2}:\d{2})?$/;
 
-function validDateOnly(value: string): boolean {
+export type DateOnlyParts = { year: number; month: number; day: number };
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) {
+    const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    return leap ? 29 : 28;
+  }
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+export function parseDateOnly(value: string): DateOnlyParts {
   const match = DATE_ONLY_PATTERN.exec(value);
-  if (!match) return false;
+  if (!match) throw new Error('التاريخ يجب أن يكون بصيغة YYYY-MM-DD');
 
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-  );
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) {
+    throw new Error('التاريخ غير صالح');
+  }
+  return { year, month, day };
+}
+
+function validDateOnly(value: string): boolean {
+  try { parseDateOnly(value); return true; } catch { return false; }
 }
 
 function validDate(value: Date): boolean {
@@ -27,24 +42,9 @@ function validDate(value: Date): boolean {
 }
 
 function dateFromUnknown(value: unknown): Date | null {
-  if (Object.prototype.toString.call(value) === '[object Date]') {
-    const date = new Date((value as Date).getTime());
-    return validDate(date) ? date : null;
-  }
-
-  const parsed = new Date(String(value));
-  return validDate(parsed) ? parsed : null;
-}
-
-function baghdadDateFromInstant(date: Date): string {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: BAGHDAD_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
+  if (Object.prototype.toString.call(value) !== '[object Date]') return null;
+  const date = new Date((value as Date).getTime());
+  return validDate(date) ? date : null;
 }
 
 function dateFromGoogleSerial(value: number): string {
@@ -62,22 +62,28 @@ function dateFromGoogleSerial(value: number): string {
   return validDate(date) ? date.toISOString().slice(0, 10) : '';
 }
 
-export function normalizeSheetDate(value: unknown): string {
+export function normalizeDateInput(value: unknown): string {
   if (value === null || value === undefined || value === '') return '';
   if (typeof value === 'number') return dateFromGoogleSerial(value);
 
   if (Object.prototype.toString.call(value) === '[object Date]') {
-    const date = dateFromUnknown(value);
-    return date ? baghdadDateFromInstant(date) : '';
+    const date = value as Date;
+    if (!validDate(date)) return '';
+    const canonical = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+    return validDateOnly(canonical) ? canonical : '';
   }
 
   const text = String(value).trim();
   if (!text) return '';
   if (DATE_ONLY_PATTERN.test(text)) return validDateOnly(text) ? text : '';
-  const datePrefix = text.slice(0, 10);
-  if (DATE_ONLY_PATTERN.test(datePrefix) && !validDateOnly(datePrefix)) return '';
 
-  const localDateTime = LOCAL_DATE_TIME_PATTERN.exec(text);
+  const display = DISPLAY_DATE_PATTERN.exec(text);
+  if (display) {
+    const canonical = `${display[3]}-${display[2]}-${display[1]}`;
+    return validDateOnly(canonical) ? canonical : '';
+  }
+
+  const localDateTime = DATE_INPUT_WITH_TIME_PATTERN.exec(text);
   if (localDateTime && validDateOnly(localDateTime[1])) {
     const hour = Number(localDateTime[2]);
     const minute = Number(localDateTime[3]);
@@ -86,9 +92,18 @@ export function normalizeSheetDate(value: unknown): string {
       ? localDateTime[1]
       : '';
   }
+  return '';
+}
 
-  const date = dateFromUnknown(text);
-  return date ? baghdadDateFromInstant(date) : '';
+export function normalizeSheetDate(value: unknown): string {
+  return normalizeDateInput(value);
+}
+
+export function formatDateForDisplay(value?: unknown): string {
+  const normalized = normalizeDateInput(value);
+  if (!normalized) return '—';
+  const { year, month, day } = parseDateOnly(normalized);
+  return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${String(year).padStart(4, '0')}`;
 }
 
 export function normalizeSheetDateTime(value: unknown): string {
@@ -103,6 +118,7 @@ export function normalizeSheetDateTime(value: unknown): string {
   const text = String(value).trim();
   if (!text) return '';
   if (DATE_ONLY_PATTERN.test(text)) return validDateOnly(text) ? text : '';
+  if (DISPLAY_DATE_PATTERN.test(text)) return normalizeDateInput(text);
   const datePrefix = text.slice(0, 10);
   if (DATE_ONLY_PATTERN.test(datePrefix) && !validDateOnly(datePrefix)) return '';
 
@@ -120,7 +136,9 @@ export function normalizeSheetDateTime(value: unknown): string {
     return `${localDateTime[1]}T${localDateTime[2]}:${localDateTime[3]}:${seconds}${milliseconds}+03:00`;
   }
 
-  const date = dateFromUnknown(text);
+  const absoluteDateTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(text);
+  if (!absoluteDateTime) return '';
+  const date = new Date(text);
   return date ? date.toISOString() : '';
 }
 
@@ -129,8 +147,7 @@ export function formatBaghdadDateTime(value: unknown): string {
   if (!normalized) return '—';
 
   if (DATE_ONLY_PATTERN.test(normalized)) {
-    const [year, month, day] = normalized.split('-');
-    return `${day}/${month}/${year}`;
+    return formatDateForDisplay(normalized);
   }
 
   const date = new Date(normalized);

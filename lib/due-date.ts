@@ -1,4 +1,5 @@
 import type { Contract, ReminderMode } from '@/types/domain';
+import { parseDateOnly } from '@/lib/dates';
 
 export function reminderMode(contract: Contract): ReminderMode {
   if (contract.reminder_mode === 'manual' || contract.reminder_mode === 'automatic') {
@@ -17,12 +18,7 @@ export function effectiveDueDate(
 }
 
 export function addCalendarMonth(date: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-  if (!match) throw new Error('Invalid calendar date');
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
+  const { year, month, day } = parseDateOnly(date);
   const targetYear = month === 12 ? year + 1 : year;
   const targetMonth = month === 12 ? 1 : month + 1;
   const lastDay = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate();

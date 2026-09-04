@@ -7,6 +7,7 @@ import type {
   InstallmentStatus,
   Payment,
 } from '@/types/domain';
+import { parseDateOnly } from '@/lib/dates';
 
 const DAY_MS = 86_400_000;
 
@@ -54,13 +55,6 @@ export function splitInstallments(totalInput: number, count: number): number[] {
   return installments;
 }
 
-function parseDateOnly(value: string): Date {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error('التاريخ غير صالح');
-  const date = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime()) || isoDate(date) !== value) throw new Error('التاريخ غير صالح');
-  return date;
-}
-
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
@@ -77,11 +71,12 @@ export function addInstallmentPeriod(
   const first = parseDateOnly(firstDueDate);
   if (!Number.isInteger(index) || index < 0) throw new Error('رقم القسط غير صالح');
   if (frequency === 'weekly') {
-    return isoDate(new Date(first.getTime() + index * 7 * DAY_MS));
+    const firstUtc = Date.UTC(first.year, first.month - 1, first.day);
+    return isoDate(new Date(firstUtc + index * 7 * DAY_MS));
   }
 
-  const anchorDay = first.getUTCDate();
-  const absoluteMonth = first.getUTCFullYear() * 12 + first.getUTCMonth() + index;
+  const anchorDay = first.day;
+  const absoluteMonth = first.year * 12 + first.month - 1 + index;
   const year = Math.floor(absoluteMonth / 12);
   const month = absoluteMonth % 12;
   const day = Math.min(anchorDay, daysInUtcMonth(year, month));
@@ -91,8 +86,7 @@ export function addInstallmentPeriod(
 export function inclusiveMonthlyInstallments(firstDueDate: string, lastDueDate: string): number {
   const first = parseDateOnly(firstDueDate);
   const last = parseDateOnly(lastDueDate);
-  const monthDifference = (last.getUTCFullYear() - first.getUTCFullYear()) * 12
-    + last.getUTCMonth() - first.getUTCMonth();
+  const monthDifference = (last.year - first.year) * 12 + last.month - first.month;
   if (monthDifference < 0) throw new Error('تاريخ آخر دفعة لا يمكن أن يسبق تاريخ أول دفعة');
   if (addInstallmentPeriod(firstDueDate, monthDifference, 'monthly') !== lastDueDate) {
     throw new Error('تاريخ آخر دفعة يجب أن يطابق دورة الأقساط الشهرية');

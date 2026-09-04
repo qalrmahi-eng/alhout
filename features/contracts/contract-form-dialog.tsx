@@ -4,8 +4,9 @@ import { FormEvent, useMemo, useState } from 'react';
 import { Calculator, LoaderCircle } from 'lucide-react';
 import { Field, ModalHeader } from '@/components/business-ui';
 import { buildContractFormPayload } from '@/lib/contract-form';
+import { formatDateForDisplay } from '@/lib/dates';
 import { addInstallmentPeriod, calculateContract, inclusiveMonthlyInstallments, splitInstallments } from '@/lib/finance';
-import { formatDate, formatIqd } from '@/lib/formatters';
+import { formatIqd } from '@/lib/formatters';
 import { addContract, updateContract } from '@/lib/sheets';
 import type { Contract, Customer, Settings } from '@/types/domain';
 
@@ -94,8 +95,8 @@ export default function ContractFormDialog(props: Props) {
           <Preview label="إجمالي العقد" value={formatIqd(preview.contractTotal)} accent />
           <Preview label="عدد الأشهر" value={`${installments} شهر`} />
           <Preview label="القسط الشهري" value={formatIqd(preview.installment)} />
-          <Preview label="أول استحقاق" value={formatDate(firstDueDate)} />
-          <Preview label="آخر استحقاق متوقع" value={formatDate(preview.expectedEnd)} />
+          <Preview label="أول استحقاق" value={formatDateForDisplay(firstDueDate)} />
+          <Preview label="آخر استحقاق متوقع" value={formatDateForDisplay(preview.expectedEnd)} />
         </div> : <p className="mt-4 text-sm text-slate-500">أدخل المبلغ والربح وعدد الأشهر لعرض الحساب.</p>}
         <p className="preview-note">المعاينة إرشادية، والحساب المحفوظ النهائي يأتي من الخادم.</p>
       </aside>

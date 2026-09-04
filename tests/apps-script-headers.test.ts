@@ -16,6 +16,8 @@ type SheetLike = {
 
 type GasRuntime = {
   canonicalHeader_: (header: unknown) => string;
+  dateText_: (value: unknown) => string;
+  dueDate_: (firstDue: string, index: number, frequency: string) => string;
   readTable_: (name: string) => { sheet: SheetLike; headers: string[]; rows: Record<string, unknown>[] };
   upgradeSheets: () => { plan: { sheet: string; action: string; headers: string[] }[] };
   getDashboard_: () => { customers: unknown[]; contracts: Record<string, unknown>[]; payments: unknown[]; summary: Record<string, number> };
@@ -95,6 +97,15 @@ const paymentHeaders = [
 ];
 
 describe('ترقية Sheets وسلامة العناوين', () => {
+  it('يطبع التواريخ الملتبسة صراحة ويحافظ على نهاية الشهر', () => {
+    const gas = loadAppsScript();
+    expect(gas.dateText_('06/10/2026')).toBe('2026-10-06');
+    expect(gas.dateText_('10/06/2026')).toBe('2026-06-10');
+    expect(gas.dateText_('2026-10-06T23:30:00-10:00')).toBe('2026-10-06');
+    expect(gas.dueDate_('2026-01-31', 1, 'monthly')).toBe('2026-02-28');
+    expect(gas.dueDate_('2026-01-31', 2, 'monthly')).toBe('2026-03-31');
+  });
+
   it('يطبع BOM والمسافات وعلامات الاتجاه', () => {
     const gas = loadAppsScript();
     expect(gas.canonicalHeader_('\uFEFF\u200FCUSTOMER_ID\u00A0')).toBe('customer_id');

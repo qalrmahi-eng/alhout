@@ -1,6 +1,7 @@
 import type { Contract, Customer } from '@/types/domain';
 import { formatDate, formatIqd } from '@/lib/formatters';
 import { effectiveDueDate, expectedPaymentAmount } from '@/lib/due-date';
+import { parseDateOnly } from '@/lib/dates';
 
 const DAY_MS = 86_400_000;
 
@@ -15,8 +16,7 @@ export function normalizeIraqiPhone(value: unknown): string | null {
 
 export function differenceInCalendarDays(date: string, today: string): number {
   const parse = (value: string) => {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error('التاريخ غير صالح');
-    const [year, month, day] = value.split('-').map(Number);
+    const { year, month, day } = parseDateOnly(value);
     return Date.UTC(year, month - 1, day);
   };
   return Math.round((parse(date) - parse(today)) / DAY_MS);

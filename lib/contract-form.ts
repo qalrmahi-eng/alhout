@@ -1,4 +1,4 @@
-import { normalizeSheetDate } from '@/lib/dates';
+import { normalizeDateInput } from '@/lib/dates';
 
 function text(form: FormData, name: string): string {
   const value = form.get(name);
@@ -7,7 +7,7 @@ function text(form: FormData, name: string): string {
 
 function requiredDate(form: FormData, name: string, label: string): string {
   const value = text(form, name);
-  if (!value || normalizeSheetDate(value) !== value) {
+  if (!value || normalizeDateInput(value) !== value) {
     throw new Error(`${label} غير صالح. استخدم الصيغة YYYY-MM-DD`);
   }
   return value;

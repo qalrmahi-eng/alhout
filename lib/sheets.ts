@@ -192,7 +192,7 @@ export function normalizePayment(value: unknown): Payment {
     customer_id: number(record.customer_id),
     contract_id: number(record.contract_id),
     amount: number(record.amount),
-    payment_date: text(record.payment_date),
+    payment_date: normalizeSheetDate(record.payment_date),
     notes: text(record.notes),
     created_at: text(record.created_at),
     status: paymentStatus(record.status),

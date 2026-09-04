@@ -852,8 +852,9 @@ function allocate_(parts, paid) {
 }
 
 function dueDate_(firstDue, index, frequency) {
-  var parts = firstDue.split('-').map(Number);
-  var first = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+  var parts = parseDateOnly_(firstDue);
+  if (!parts) throw new Error('التاريخ غير صالح');
+  var first = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
   if (frequency === 'weekly') {
     first.setUTCDate(first.getUTCDate() + index * 7);
     return Utilities.formatDate(first, 'UTC', 'yyyy-MM-dd');
@@ -866,9 +867,10 @@ function dueDate_(firstDue, index, frequency) {
 }
 
 function inclusiveMonthlyInstallments_(firstDue, lastDue) {
-  var first = firstDue.split('-').map(Number);
-  var last = lastDue.split('-').map(Number);
-  var monthDifference = (last[0] - first[0]) * 12 + last[1] - first[1];
+  var first = parseDateOnly_(firstDue);
+  var last = parseDateOnly_(lastDue);
+  if (!first || !last) throw new Error('التاريخ غير صالح');
+  var monthDifference = (last.year - first.year) * 12 + last.month - first.month;
   if (monthDifference < 0) throw new Error('تاريخ آخر دفعة لا يمكن أن يسبق تاريخ أول دفعة');
   if (dueDate_(firstDue, monthDifference, 'monthly') !== lastDue) {
     throw new Error('تاريخ آخر دفعة يجب أن يطابق دورة الأقساط الشهرية');
@@ -1040,16 +1042,37 @@ function truthy_(value) { return value === true || String(value).toLowerCase() =
 function hasDateValue_(value) { return value !== undefined && value !== null && text_(value) !== ''; }
 function today_() { return Utilities.formatDate(new Date(), 'Asia/Baghdad', 'yyyy-MM-dd'); }
 function now_() { return Utilities.formatDate(new Date(), 'Asia/Baghdad', "yyyy-MM-dd'T'HH:mm:ss"); }
-function validCalendarDate_(value) {
+function parseDateOnly_(value) {
   var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return false;
+  if (!match) return null;
   var year = Number(match[1]);
   var month = Number(match[2]);
   var day = Number(match[3]);
   var date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day;
+  if (date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day) return null;
+  return { year: year, month: month, day: day };
+}
+function validCalendarDate_(value) {
+  return Boolean(parseDateOnly_(value));
+}
+function normalizeDateInput_(value) {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'number') return googleSerialDate_(value);
+  if (Object.prototype.toString.call(value) === '[object Date]') return Utilities.formatDate(value, 'Asia/Baghdad', 'yyyy-MM-dd');
+  var text = String(value).trim();
+  if (validCalendarDate_(text)) return text;
+  var display = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text);
+  if (display) {
+    var canonical = display[3] + '-' + display[2] + '-' + display[1];
+    return validCalendarDate_(canonical) ? canonical : '';
+  }
+  var local = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})?$/.exec(text);
+  return local && validCalendarDate_(local[1]) &&
+    Number(local[2]) <= 23 && Number(local[3]) <= 59 && Number(local[4] || 0) <= 59
+    ? local[1]
+    : '';
 }
 function googleSerialDate_(value) {
   if (!isFinite(value) || value < 0 || value > 2958465) return '';
@@ -1057,21 +1080,7 @@ function googleSerialDate_(value) {
   return Utilities.formatDate(date, 'UTC', 'yyyy-MM-dd');
 }
 function dateText_(value) {
-  if (value === null || value === undefined || value === '') return '';
-  if (typeof value === 'number') return googleSerialDate_(value);
-  if (Object.prototype.toString.call(value) === '[object Date]') return Utilities.formatDate(value, 'Asia/Baghdad', 'yyyy-MM-dd');
-  var text = String(value).trim();
-  if (validCalendarDate_(text)) return text;
-  var prefix = text.slice(0, 10);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(prefix) && !validCalendarDate_(prefix)) return '';
-  var local = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?$/.exec(text);
-  if (local) {
-    return Number(local[2]) <= 23 && Number(local[3]) <= 59 && Number(local[4] || 0) <= 59
-      ? local[1]
-      : '';
-  }
-  var parsed = new Date(text);
-  return isNaN(parsed.getTime()) ? '' : Utilities.formatDate(parsed, 'Asia/Baghdad', 'yyyy-MM-dd');
+  return normalizeDateInput_(value);
 }
 function dateTimeText_(value) {
   if (value === null || value === undefined || value === '') return '';
@@ -1087,6 +1096,8 @@ function dateTimeText_(value) {
       ? text.replace(' ', 'T')
       : '';
   }
+  var absolute = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(text);
+  if (!absolute) return '';
   var parsed = new Date(text);
   return isNaN(parsed.getTime()) ? '' : Utilities.formatDate(parsed, 'Asia/Baghdad', "yyyy-MM-dd'T'HH:mm:ss");
 }
