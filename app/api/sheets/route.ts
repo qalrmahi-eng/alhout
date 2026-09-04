@@ -17,7 +17,10 @@ const ALLOWED_ACTIONS = new Set([
   'update_contract',
   'archive_contract',
   'restore_contract',
+  'set_manual_reminder_date',
+  'clear_manual_reminder_date',
   'add_payment',
+  'update_payment',
   'cancel_payment',
   'update_settings',
 ]);

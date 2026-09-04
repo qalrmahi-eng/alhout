@@ -1,5 +1,6 @@
 import type { Contract, Customer } from '@/types/domain';
-import { differenceInCalendarDays, expectedPaymentAmount } from '@/lib/whatsapp';
+import { differenceInCalendarDays } from '@/lib/whatsapp';
+import { effectiveDueDate, expectedPaymentAmount } from '@/lib/due-date';
 
 export type ReminderCategory = 'after_7' | 'after_3' | 'tomorrow' | 'today' | 'overdue';
 
@@ -8,7 +9,8 @@ export type ReminderItem = {
   contract: Contract;
   days: number;
   amount: number;
-  category: ReminderCategory;
+  category: ReminderCategory | null;
+  dueDate: string;
 };
 
 export const reminderCategories: { id: ReminderCategory; label: string }[] = [
@@ -28,7 +30,7 @@ function categoryForDays(days: number): ReminderCategory | null {
   return null;
 }
 
-export function buildReminders(
+function buildOperationalReminders(
   customers: Customer[],
   contracts: Contract[],
   today: string,
@@ -36,14 +38,23 @@ export function buildReminders(
   const customersById = new Map(customers.map((customer) => [customer.id, customer]));
   const reminders: ReminderItem[] = [];
   for (const contract of contracts) {
-    if (contract.archived || contract.status === 'مؤرشف' || contract.status === 'مكتمل' || !contract.next_due_date) continue;
+    const dueDate = effectiveDueDate(contract);
+    if (contract.archived || contract.status === 'مؤرشف' || contract.status === 'مكتمل' || !dueDate) continue;
     const customer = customersById.get(contract.customer_id);
     if (!customer || customer.archived) continue;
-    const days = differenceInCalendarDays(contract.next_due_date, today);
+    const days = differenceInCalendarDays(dueDate, today);
     const category = categoryForDays(days);
-    if (!category) continue;
-    reminders.push({ customer, contract, days, category, amount: expectedPaymentAmount(contract) });
+    reminders.push({ customer, contract, days, category, dueDate, amount: expectedPaymentAmount(contract) });
   }
   return reminders.sort((a, b) => a.days - b.days || a.customer.name.localeCompare(b.customer.name, 'ar'));
 }
 
+export function buildReminders(customers: Customer[], contracts: Contract[], today: string): ReminderItem[] {
+  return buildOperationalReminders(customers, contracts, today).filter((reminder) => reminder.category !== null);
+}
+
+export function buildRemindersForDate(
+  customers: Customer[], contracts: Contract[], today: string, selectedDate: string,
+): ReminderItem[] {
+  return buildOperationalReminders(customers, contracts, today).filter((reminder) => reminder.dueDate === selectedDate);
+}

@@ -131,13 +131,10 @@ export default function ReceiptModal({
           </p>
           <div className="receipt-grid">
             <ReceiptItem label="المبلغ المستلم" value={formatIqd(snapshot.paymentAmount)} accent />
-            <ReceiptItem label="قيمة القسط الشهري" value={formatIqd(snapshot.installmentValue)} />
+            <ReceiptItem label="إجمالي العقد" value={formatIqd(snapshot.contractTotal)} />
             <ReceiptItem label="إجمالي المدفوع بعد الدفعة" value={formatIqd(snapshot.paidAfterPayment)} />
             <ReceiptItem label="المتبقي بعد الدفعة" value={formatIqd(snapshot.remaining)} />
-            <ReceiptItem
-              label="الأقساط المكتملة / المتبقية"
-              value={`${snapshot.completedInstallments} / ${snapshot.remainingInstallments}`}
-            />
+            <ReceiptItem label="قيمة الدفعة القادمة" value={formatIqd(snapshot.expectedPaymentAmount)} />
             <ReceiptItem
               label="موعد القسط القادم"
               value={snapshot.completed ? 'تم إكمال العقد' : formatDate(snapshot.nextDueDate)}

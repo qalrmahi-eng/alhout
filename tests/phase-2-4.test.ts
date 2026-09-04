@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildReminders } from '@/lib/reminders';
+import { buildReminders, buildRemindersForDate } from '@/lib/reminders';
+import { effectiveDueDate, expectedPaymentAmount } from '@/lib/due-date';
 import { reportPresetRange } from '@/lib/reports';
 import { buildWhatsAppMessage, buildWhatsAppUrl, normalizeIraqiPhone } from '@/lib/whatsapp';
 import type { Contract, Customer } from '@/types/domain';
@@ -41,6 +42,13 @@ describe('WhatsApp العراقي', () => {
     expect(normalizeIraqiPhone('123')).toBeNull();
   });
 
+  it('لا يقترح للزبون مبلغاً أكبر من المتبقي', () => {
+    const row = contract(2, '2026-09-11');
+    row.remaining_amount = 80_000;
+    row.current_installment_remaining = 10_000;
+    expect(expectedPaymentAmount(row)).toBe(80_000);
+  });
+
   it('ينشئ رسالة ديناميكية كاملة بلا العبارات الممنوعة', () => {
     const row = contract(10, '2026-09-11');
     const message = buildWhatsAppMessage(customer, row, '2026-09-04');
@@ -49,7 +57,7 @@ describe('WhatsApp العراقي', () => {
     expect(message).toContain('150,000 د.ع');
     expect(message).toContain('11/09/2026');
     expect(message).toContain('450,000 د.ع');
-    expect(message).toContain('300,000 د.ع');
+    expect(message).toContain('إجمالي المبلغ المتبقي حالياً');
     expect(message).not.toContain('حسب الاتفاق');
     expect(message).not.toContain('- الحوت');
     expect(buildWhatsAppUrl(customer, row, '2026-09-04')).toMatch(/^https:\/\/wa\.me\/9647701234567\?text=/);
@@ -70,6 +78,18 @@ describe('مركز التذكيرات', () => {
     const after = buildReminders([customer], [contract(1, '2026-10-11')], '2026-09-04');
     expect(before).toHaveLength(1);
     expect(after).toHaveLength(0);
+  });
+
+  it('يستخدم الموعد اليدوي والفلترة حسب التاريخ ثم يعود للتلقائي عند مسحه', () => {
+    const row = contract(8, '2026-10-11');
+    row.manual_reminder_date = '2026-09-07';
+    expect(effectiveDueDate(row)).toBe('2026-09-07');
+    expect(buildReminders([customer], [row], '2026-09-04')[0]).toMatchObject({ category: 'after_3', dueDate: '2026-09-07' });
+    expect(buildRemindersForDate([customer], [row], '2026-09-04', '2026-09-07')).toHaveLength(1);
+    expect(buildWhatsAppMessage(customer, row, '2026-09-04')).toContain('07/09/2026');
+    row.manual_reminder_date = '';
+    expect(effectiveDueDate(row)).toBe('2026-10-11');
+    expect(buildRemindersForDate([customer], [row], '2026-09-04', '2026-09-07')).toHaveLength(0);
   });
 });
 

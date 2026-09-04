@@ -1,5 +1,6 @@
 import type { Contract, Customer } from '@/types/domain';
 import { formatDate, formatIqd } from '@/lib/formatters';
+import { effectiveDueDate, expectedPaymentAmount } from '@/lib/due-date';
 
 const DAY_MS = 86_400_000;
 
@@ -21,31 +22,26 @@ export function differenceInCalendarDays(date: string, today: string): number {
   return Math.round((parse(date) - parse(today)) / DAY_MS);
 }
 
-export function expectedPaymentAmount(contract: Contract): number {
-  const current = contract.current_installment_remaining || contract.installment_value;
-  return Math.max(0, Math.min(current, contract.remaining_amount));
-}
-
 function timingText(days: number): string {
-  if (days < 0) return `مضى على موعد تسديد الدفعة الشهرية ${Math.abs(days)} أيام`;
-  if (days === 0) return 'موعد تسديد الدفعة الشهرية اليوم';
-  if (days === 1) return 'موعد تسديد الدفعة الشهرية غداً';
-  return `متبقي ${days} أيام على موعد تسديد الدفعة الشهرية`;
+  if (days < 0) return `مضى على موعد الدفعة ${Math.abs(days)} أيام`;
+  if (days === 0) return 'موعد الدفعة القادمة اليوم';
+  if (days === 1) return 'متبقي يوم واحد على موعد الدفعة القادمة';
+  return `متبقي ${days} أيام على موعد الدفعة القادمة`;
 }
 
 export function buildWhatsAppMessage(customer: Customer, contract: Contract, today: string): string {
-  if (!contract.next_due_date || contract.remaining_amount <= 0) {
+  const dueDate = effectiveDueDate(contract);
+  if (!dueDate || contract.remaining_amount <= 0) {
     throw new Error('لا يوجد استحقاق حالي لهذا العقد');
   }
   const amount = expectedPaymentAmount(contract);
-  const days = differenceInCalendarDays(contract.next_due_date, today);
-  const remainingAfter = Math.max(contract.remaining_amount - amount, 0);
+  const days = differenceInCalendarDays(dueDate, today);
   return [
     `السلام عليكم أستاذ ${customer.name}،`,
     '',
-    `${timingText(days)}، وقيمتها ${formatIqd(amount)}، بتاريخ ${formatDate(contract.next_due_date)}.`,
+    `${timingText(days)} بتاريخ ${formatDate(dueDate)}، وقيمتها ${formatIqd(amount)}.`,
     '',
-    `المتبقي من إجمالي العقد حالياً ${formatIqd(contract.remaining_amount)}، وبعد تسديد هذه الدفعة سيصبح المتبقي ${formatIqd(remainingAfter)}.`,
+    `إجمالي المبلغ المتبقي حالياً ${formatIqd(contract.remaining_amount)}.`,
   ].join('\n');
 }
 

@@ -163,6 +163,7 @@ export function normalizeContract(value: unknown): Contract {
     current_installment_paid: number(record.current_installment_paid),
     current_installment_remaining: number(record.current_installment_remaining),
     next_due_date: normalizeSheetDate(record.next_due_date),
+    manual_reminder_date: normalizeSheetDate(record.manual_reminder_date),
     status: status as Contract['status'],
     archived: boolean(record.archived, status === 'مؤرشف'),
     created_at: normalizeSheetDateTime(record.created_at),
@@ -190,6 +191,8 @@ export function normalizePayment(value: unknown): Payment {
     status: paymentStatus(record.status),
     cancellation_reason: text(record.cancellation_reason),
     cancelled_at: text(record.cancelled_at),
+    edited_at: normalizeSheetDateTime(record.edited_at),
+    edit_reason: text(record.edit_reason),
     paid_after: optionalNumber(record.paid_after),
     remaining_after: optionalNumber(record.remaining_after),
     updated_at: text(record.updated_at),
@@ -285,6 +288,10 @@ export const archiveContract = (contractId: number) =>
   request('archive_contract', normalizeContract, { contract_id: contractId });
 export const restoreContract = (contractId: number) =>
   request('restore_contract', normalizeContract, { contract_id: contractId });
+export const setManualReminderDate = (contractId: number, date: string) =>
+  request('set_manual_reminder_date', normalizeContract, { contract_id: contractId, manual_reminder_date: date });
+export const clearManualReminderDate = (contractId: number) =>
+  request('clear_manual_reminder_date', normalizeContract, { contract_id: contractId });
 export const archiveCustomer = (customerId: number) =>
   request('archive_customer', normalizeCustomer, { customer_id: customerId });
 export const restoreCustomer = (customerId: number) =>
@@ -314,5 +321,7 @@ export const cancelPayment = (paymentId: number, cancellationReason: string) =>
       cancellation_reason: cancellationReason,
     },
   );
+export const updatePayment = (data: Record<string, unknown>) =>
+  request('update_payment', normalizePayment, data);
 export const updateSettings = (data: Record<string, unknown>) =>
   request('update_settings', normalizeSettings, data);

@@ -23,6 +23,9 @@ type GasRuntime = {
   addContract_: (data: Record<string, unknown>) => Record<string, unknown>;
   addPayment_: (data: Record<string, unknown>) => Record<string, unknown>;
   cancelPayment_: (data: Record<string, unknown>) => Record<string, unknown>;
+  updatePayment_: (data: Record<string, unknown>) => Record<string, unknown>;
+  setManualReminderDate_: (data: Record<string, unknown>) => Record<string, unknown>;
+  clearManualReminderDate_: (data: Record<string, unknown>) => Record<string, unknown>;
   permanentlyDeleteCustomer_: (data: Record<string, unknown>) => Record<string, unknown>;
   listContracts_: () => Record<string, unknown>[];
   listPayments_: () => Record<string, unknown>[];
@@ -81,12 +84,12 @@ const contractHeaders = [
   'installments', 'installment_value', 'delivery_date', 'first_due_date', 'expected_end_date',
   'guarantor_name', 'guarantor_phone', 'notes', 'paid_amount', 'remaining_amount',
   'current_installment_paid', 'current_installment_remaining', 'next_due_date', 'status',
-  'archived', 'created_at', 'updated_at',
+  'archived', 'created_at', 'updated_at', 'manual_reminder_date',
 ];
 const paymentHeaders = [
   'id', 'customer_id', 'amount', 'payment_date', 'notes', 'created_at', 'contract_id',
   'request_id', 'receipt_number', 'status', 'cancellation_reason', 'cancelled_at',
-  'paid_after', 'remaining_after', 'updated_at',
+  'paid_after', 'remaining_after', 'updated_at', 'edited_at', 'edit_reason',
 ];
 
 describe('ترقية Sheets وسلامة العناوين', () => {
@@ -103,7 +106,7 @@ describe('ترقية Sheets وسلامة العناوين', () => {
     expect(plan.find((item) => item.sheet === 'contracts')?.action).toBe('create');
     expect(plan.find((item) => item.sheet === 'payments')?.headers).toEqual([
       'contract_id', 'request_id', 'receipt_number', 'status', 'cancellation_reason',
-      'cancelled_at', 'paid_after', 'remaining_after', 'updated_at',
+      'cancelled_at', 'paid_after', 'remaining_after', 'updated_at', 'edited_at', 'edit_reason',
     ]);
   });
 
@@ -204,5 +207,39 @@ describe('سيناريو Phase 1 في Apps Script', () => {
     expect(gas.listContracts_()).toHaveLength(0);
     expect(gas.listPayments_()).toHaveLength(0);
     expect(gas.readTable_('settings').rows).toHaveLength(1);
+  });
+
+  it('يفصل موعد التذكير ويصحح الدفعة ولقطات ما بعدها داخل عقد واحد', () => {
+    const customerRow = customerHeaders.map((header) => ({ id: 21, name: 'سارة', phone: '07700000001' } as Record<string, unknown>)[header] ?? '');
+    const customers = fakeSheet('customers', customerHeaders, [customerRow]);
+    const contracts = fakeSheet('contracts', contractHeaders);
+    const payments = fakeSheet('payments', paymentHeaders);
+    const settings = fakeSheet('settings', ['id', 'system_name'], [[1, 'الحوت']]);
+    const gas = loadAppsScript({ settings: settings.sheet, customers: customers.sheet, contracts: contracts.sheet, payments: payments.sheet });
+    const first = gas.addContract_({ customer_id: 21, principal: 1_000_000, profit_percent: 10, installments: 10, delivery_date: '2026-01-01', first_due_date: '2026-01-31' });
+    const second = gas.addContract_({ customer_id: 21, principal: 1_000_000, profit_percent: 0, installments: 10, delivery_date: '2026-01-01', first_due_date: '2026-01-31' });
+    const payment1 = gas.addPayment_({ contract_id: first.id, amount: 100_000, payment_date: '2026-01-31', request_id: 'edit-1' });
+    const payment2 = gas.addPayment_({ contract_id: first.id, amount: 200_000, payment_date: '2026-02-10', request_id: 'edit-2' });
+    const payment3 = gas.addPayment_({ contract_id: first.id, amount: 300_000, payment_date: '2026-03-10', request_id: 'edit-3' });
+    gas.addPayment_({ contract_id: second.id, amount: 100_000, payment_date: '2026-02-01', request_id: 'other-contract' });
+    const secondBefore = gas.listContracts_().find((row) => row.id === second.id);
+
+    const automaticDue = gas.listContracts_().find((row) => row.id === first.id)?.next_due_date;
+    expect(gas.setManualReminderDate_({ contract_id: first.id, manual_reminder_date: '2026-09-15' })).toMatchObject({ manual_reminder_date: '2026-09-15', next_due_date: automaticDue });
+    expect(gas.clearManualReminderDate_({ contract_id: first.id })).toMatchObject({ manual_reminder_date: '', next_due_date: automaticDue });
+
+    const edited = gas.updatePayment_({ payment_id: payment1.id, amount: 150_000, payment_date: '2026-02-01', notes: 'تصحيح', edit_reason: 'خطأ إدخال' });
+    expect(edited).toMatchObject({ amount: 150_000, payment_date: '2026-02-01', notes: 'تصحيح', edit_reason: 'خطأ إدخال', paid_after: 150_000, remaining_after: 950_000 });
+    const after = gas.listPayments_();
+    expect(after.find((row) => row.id === payment2.id)).toMatchObject({ paid_after: 350_000, remaining_after: 750_000 });
+    expect(after.find((row) => row.id === payment3.id)).toMatchObject({ paid_after: 650_000, remaining_after: 450_000 });
+    expect(gas.listContracts_().find((row) => row.id === first.id)).toMatchObject({ paid_amount: 650_000, remaining_amount: 450_000 });
+    expect(gas.listContracts_().find((row) => row.id === second.id)).toMatchObject({ paid_amount: secondBefore?.paid_amount, remaining_amount: secondBefore?.remaining_amount });
+    expect(gas.reportsSummary_({ from: '2026-01-01', to: '2026-01-31' })).toMatchObject({ received_amount: 0, payments_count: 0 });
+    expect(gas.reportsSummary_({ from: '2026-02-01', to: '2026-02-28' })).toMatchObject({ received_amount: 450_000, payments_count: 3 });
+    expect(() => gas.updatePayment_({ payment_id: payment1.id, amount: 900_000, edit_reason: 'قيمة غير صحيحة' })).toThrow('أكبر من إجمالي العقد');
+
+    gas.cancelPayment_({ payment_id: payment2.id, cancellation_reason: 'اختبار' });
+    expect(() => gas.updatePayment_({ payment_id: payment2.id, amount: 1, edit_reason: 'ممنوع' })).toThrow('لا يمكن تعديل دفعة ملغاة');
   });
 });

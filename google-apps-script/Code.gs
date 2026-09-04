@@ -24,14 +24,15 @@ var SHEETS = {
     added: [
       'paid_amount', 'remaining_amount', 'current_installment_paid',
       'current_installment_remaining', 'next_due_date', 'status', 'archived',
-      'created_at', 'updated_at'
+      'created_at', 'updated_at', 'manual_reminder_date'
     ]
   },
   payments: {
     legacy: ['id', 'customer_id', 'amount', 'payment_date', 'notes', 'created_at'],
     added: [
       'contract_id', 'request_id', 'receipt_number', 'status', 'cancellation_reason',
-      'cancelled_at', 'paid_after', 'remaining_after', 'updated_at'
+      'cancelled_at', 'paid_after', 'remaining_after', 'updated_at',
+      'edited_at', 'edit_reason'
     ]
   }
 };
@@ -95,7 +96,10 @@ function dispatch_(action, data, trackingId) {
     update_contract: updateContract_,
     archive_contract: archiveContract_,
     restore_contract: restoreContract_,
+    set_manual_reminder_date: setManualReminderDate_,
+    clear_manual_reminder_date: clearManualReminderDate_,
     add_payment: addPayment_,
+    update_payment: updatePayment_,
     cancel_payment: cancelPayment_,
     update_settings: updateSettings_,
     // توافق انتقالي: delete_customer القديم يبقى أرشفة، والحذف النهائي له Action صريح.
@@ -319,6 +323,8 @@ function listPayments_() {
     row.payment_date = dateText_(row.payment_date);
     row.created_at = dateTimeText_(row.created_at);
     row.cancelled_at = dateTimeText_(row.cancelled_at);
+    row.edited_at = dateTimeText_(row.edited_at);
+    row.edit_reason = text_(row.edit_reason);
     return row;
   });
 }
@@ -476,7 +482,8 @@ function addContract_(data) {
     status: 'منتظم',
     archived: false,
     created_at: now,
-    updated_at: now
+    updated_at: now,
+    manual_reminder_date: ''
   };
   row = enrichContract_(row, []);
   appendObject_('contracts', row);
@@ -515,6 +522,26 @@ function archiveContract_(data) {
 
 function restoreContract_(data) {
   return setContractArchived_(positiveInteger_(data.contract_id || data.id, 'معرف العقد'), false);
+}
+
+function setManualReminderDate_(data) {
+  return changeManualReminderDate_(data, requireDate_(data.manual_reminder_date, 'موعد التذكير'));
+}
+
+function clearManualReminderDate_(data) {
+  return changeManualReminderDate_(data, '');
+}
+
+function changeManualReminderDate_(data, reminderDate) {
+  var contractId = positiveInteger_(data.contract_id || data.id, 'معرف العقد');
+  var table = readTable_('contracts');
+  var found = findById_(table, contractId);
+  if (!found) throw new Error('العقد غير موجود');
+  found.object.manual_reminder_date = reminderDate;
+  found.object.updated_at = now_();
+  writeObjectRow_(table, found.rowNumber, found.object);
+  var payments = indexPaymentsByContract_(listPayments_())[contractId] || [];
+  return enrichContract_(found.object, payments);
 }
 
 function setContractArchived_(contractId, archived) {
@@ -573,13 +600,90 @@ function addPayment_(data) {
     status: 'active',
     cancellation_reason: '',
     cancelled_at: '',
+    edited_at: '',
+    edit_reason: '',
     paid_after: current.paid_amount + amount,
     remaining_after: current.remaining_amount - amount,
     updated_at: createdAt
   };
   appendObject_('payments', row);
-  row.contract_after = recalculateContract_(contractId);
-  return row;
+  rebuildPaymentSnapshots_(contractId, current.contract_total);
+  var contractAfter = recalculateContract_(contractId);
+  var saved = findById_(readTable_('payments'), id).object;
+  saved.contract_after = contractAfter;
+  return saved;
+}
+
+function updatePayment_(data) {
+  var paymentId = positiveInteger_(data.payment_id || data.id, 'معرف الدفعة');
+  var editReason = requireText_(data.edit_reason, 'سبب تعديل الدفعة مطلوب');
+  var paymentTable = readTable_('payments');
+  var found = findById_(paymentTable, paymentId);
+  if (!found) throw new Error('الدفعة غير موجودة');
+  if ((text_(found.object.status) || 'active') === 'cancelled') {
+    throw new Error('لا يمكن تعديل دفعة ملغاة');
+  }
+  var contractId = positiveInteger_(found.object.contract_id, 'معرف العقد');
+  var contractTable = readTable_('contracts');
+  var contractFound = findById_(contractTable, contractId);
+  if (!contractFound) throw new Error('العقد غير موجود');
+  var calculated = contract_(
+    positiveInteger_(contractFound.object.principal, 'أصل المبلغ'),
+    nonNegativeNumber_(contractFound.object.profit_percent, 'نسبة الربح'),
+    positiveInteger_(contractFound.object.installments, 'عدد الأقساط')
+  );
+  var newAmount = data.amount === undefined
+    ? positiveInteger_(found.object.amount, 'مبلغ الدفعة')
+    : positiveInteger_(data.amount, 'مبلغ الدفعة');
+  var otherActiveTotal = paymentTable.rows.reduce(function (sum, payment) {
+    if (number_(payment.contract_id, 0) !== contractId) return sum;
+    if (number_(payment.id, 0) === paymentId) return sum;
+    return (text_(payment.status) || 'active') === 'active'
+      ? sum + positiveInteger_(payment.amount, 'مبلغ الدفعة')
+      : sum;
+  }, 0);
+  if (otherActiveTotal + newAmount > calculated.total) {
+    throw new Error('إجمالي الدفعات بعد التعديل أكبر من إجمالي العقد');
+  }
+
+  found.object.amount = newAmount;
+  if (data.payment_date !== undefined) {
+    found.object.payment_date = requireDate_(data.payment_date, 'تاريخ الدفع');
+  }
+  if (data.notes !== undefined) found.object.notes = text_(data.notes);
+  found.object.edited_at = now_();
+  found.object.edit_reason = editReason;
+  found.object.updated_at = found.object.edited_at;
+  writeObjectRow_(paymentTable, found.rowNumber, found.object);
+  rebuildPaymentSnapshots_(contractId, calculated.total, paymentTable);
+  var contractAfter = recalculateContract_(contractId);
+  var saved = findById_(readTable_('payments'), paymentId).object;
+  saved.contract_after = contractAfter;
+  return saved;
+}
+
+function rebuildPaymentSnapshots_(contractId, contractTotal, paymentTable) {
+  var table = paymentTable || readTable_('payments');
+  var active = [];
+  table.rows.forEach(function (payment, index) {
+    if (number_(payment.contract_id, 0) !== contractId) return;
+    if ((text_(payment.status) || 'active') !== 'active') return;
+    active.push({ object: payment, rowNumber: index + 2 });
+  });
+  active.sort(function (a, b) {
+    var byDate = dateText_(a.object.payment_date).localeCompare(dateText_(b.object.payment_date));
+    if (byDate) return byDate;
+    var byCreated = dateTimeText_(a.object.created_at).localeCompare(dateTimeText_(b.object.created_at));
+    if (byCreated) return byCreated;
+    return number_(a.object.id, 0) - number_(b.object.id, 0);
+  });
+  var runningPaid = 0;
+  active.forEach(function (item) {
+    runningPaid += positiveInteger_(item.object.amount, 'مبلغ الدفعة');
+    item.object.paid_after = runningPaid;
+    item.object.remaining_after = contractTotal - runningPaid;
+    writeObjectRow_(table, item.rowNumber, item.object);
+  });
 }
 
 function cancelPayment_(data) {
@@ -594,7 +698,17 @@ function cancelPayment_(data) {
   found.object.cancelled_at = now_();
   found.object.updated_at = now_();
   writeObjectRow_(table, found.rowNumber, found.object);
-  recalculateContract_(positiveInteger_(found.object.contract_id, 'معرف العقد'));
+  var contractId = positiveInteger_(found.object.contract_id, 'معرف العقد');
+  var contractTable = readTable_('contracts');
+  var contractFound = findById_(contractTable, contractId);
+  if (!contractFound) throw new Error('العقد غير موجود');
+  var calculated = contract_(
+    positiveInteger_(contractFound.object.principal, 'أصل المبلغ'),
+    nonNegativeNumber_(contractFound.object.profit_percent, 'نسبة الربح'),
+    positiveInteger_(contractFound.object.installments, 'عدد الأقساط')
+  );
+  rebuildPaymentSnapshots_(contractId, calculated.total);
+  recalculateContract_(contractId);
   return found.object;
 }
 
@@ -679,6 +793,7 @@ function enrichContract_(row, payments) {
   row.current_installment_remaining = currentIndex === -1 ? 0 :
     contract.parts[currentIndex] - allocation.paidByInstallment[currentIndex];
   row.next_due_date = nextDue;
+  row.manual_reminder_date = dateText_(row.manual_reminder_date);
   row.status = status;
   row.archived = archived;
   return row;

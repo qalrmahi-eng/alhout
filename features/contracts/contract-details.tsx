@@ -1,10 +1,12 @@
 'use client';
 
-import { Archive, ArrowRight, MessageCircle, Pencil, Printer, RotateCcw, WalletCards } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Archive, ArrowRight, CalendarClock, MessageCircle, Pencil, Printer, RotateCcw, WalletCards } from 'lucide-react';
 import { EmptyState, StatusBadge } from '@/components/business-ui';
 import { formatBaghdadDateTime } from '@/lib/dates';
 import { formatContractNumber, formatDate, formatIqd } from '@/lib/formatters';
 import { buildWhatsAppUrl } from '@/lib/whatsapp';
+import { effectiveDueDate } from '@/lib/due-date';
 import type { ContractView, Payment } from '@/types/domain';
 
 type Props = {
@@ -16,13 +18,16 @@ type Props = {
   onEdit: () => void;
   onReceipt: (payment: Payment) => void;
   onCancel: (payment: Payment) => void;
+  onEditPayment: (payment: Payment) => void;
   onArchive: () => void;
+  onReminder: () => void;
   onWhatsAppError: (message: string) => void;
 };
 
 export default function ContractDetails(props: Props) {
   const { contract } = props;
   const progress = contract.summary;
+  const sortedPayments = [...props.payments].sort((a, b) => b.payment_date.localeCompare(a.payment_date) || String(b.created_at || '').localeCompare(String(a.created_at || '')) || b.id - a.id);
   function whatsapp() {
     try {
       window.open(buildWhatsAppUrl(contract.customer, contract, props.today), '_blank', 'noopener,noreferrer');
@@ -36,8 +41,9 @@ export default function ContractDetails(props: Props) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div><p className="eyebrow">تفاصيل العقد</p><div className="flex items-center gap-3"><h2 className="text-2xl font-black" dir="ltr">{formatContractNumber(contract.id)}</h2><StatusBadge status={progress.status} /></div><p className="mt-1 text-slate-500">{contract.customer.name} · {contract.customer.phone || 'بدون هاتف'}</p></div>
         <div className="flex flex-wrap gap-2 no-print">
-          <button className="secondary-button compact" onClick={whatsapp} disabled={!contract.next_due_date || contract.remaining_amount <= 0}><MessageCircle size={16} /> واتساب</button>
+          <button className="secondary-button compact" onClick={whatsapp} disabled={!effectiveDueDate(contract) || contract.remaining_amount <= 0}><MessageCircle size={16} /> واتساب</button>
           <button className="secondary-button compact" onClick={props.onEdit} disabled={contract.status === 'مؤرشف'}><Pencil size={16} /> تعديل</button>
+          <button className="secondary-button compact" onClick={props.onReminder}><CalendarClock size={16} /> {contract.manual_reminder_date ? 'تعديل موعد التذكير' : 'تحديد موعد التذكير'}</button>
           <button className="secondary-button compact" onClick={props.onArchive}>{contract.status === 'مؤرشف' ? <RotateCcw size={16} /> : <Archive size={16} />}{contract.status === 'مؤرشف' ? 'استرجاع' : 'أرشفة'}</button>
           <button className="primary-button compact" onClick={props.onPay} disabled={['مكتمل', 'مؤرشف'].includes(progress.status)}><WalletCards size={16} /> إضافة دفعة</button>
         </div>
@@ -65,6 +71,7 @@ export default function ContractDetails(props: Props) {
           <Info label="تاريخ التسليم" value={formatDate(contract.delivery_date)} />
           <Info label="أول استحقاق" value={formatDate(contract.first_due_date)} />
           <Info label="آخر استحقاق متوقع" value={formatDate(contract.expected_end_date)} />
+          <Info label="موعد التذكير" value={<span className="reminder-info-value">{formatDate(effectiveDueDate(contract))}{contract.manual_reminder_date && <em className="muted-badge">تذكير يدوي</em>}</span>} />
           <Info label="نسبة الربح" value={`${contract.profit_percent}%`} />
           <Info label="مبلغ الربح" value={formatIqd(contract.profit_amount)} />
           <Info label="الكفيل" value={contract.guarantor_name || '—'} />
@@ -81,17 +88,18 @@ export default function ContractDetails(props: Props) {
 
     <section className="panel overflow-hidden">
       <div className="flex items-center justify-between"><div><h3 className="section-heading">سجل الدفعات</h3><p className="text-sm text-slate-500">{props.payments.length} عملية محفوظة</p></div><button className="secondary-button compact no-print" onClick={() => window.print()}><Printer size={16} /> طباعة</button></div>
-      {props.payments.length ? <><div className="table-wrap mt-4 desktop-payment-table"><table><thead><tr><th>رقم الوصل</th><th>تاريخ الدفع</th><th>المبلغ</th><th>الملاحظة</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody>{[...props.payments].reverse().map((payment) => {
+      {props.payments.length ? <><div className="table-wrap mt-4 desktop-payment-table"><table><thead><tr><th>رقم الوصل</th><th>تاريخ الدفع</th><th>المبلغ</th><th>الملاحظة</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody>{sortedPayments.map((payment) => {
         const cancelled = payment.status === 'cancelled';
-        return <tr key={payment.id} className={cancelled ? 'cancelled-row' : ''}><td dir="ltr">{payment.receipt_number || `#${payment.id}`}</td><td>{formatDate(payment.payment_date)}</td><td>{formatIqd(payment.amount)}</td><td>{payment.notes || '—'}</td><td>{cancelled ? <span><b className="status status-archived">ملغاة</b><small className="block mt-1">{payment.cancellation_reason} · {formatBaghdadDateTime(payment.cancelled_at)}</small></span> : <b className="status status-paid">نشطة</b>}</td><td><div className="flex gap-2"><button className="mini-button" onClick={() => props.onReceipt(payment)}>الوصل</button>{!cancelled && <button className="mini-button danger" onClick={() => props.onCancel(payment)}>إلغاء</button>}</div></td></tr>;
-      })}</tbody></table></div><div className="mobile-payment-list">{[...props.payments].reverse().map((payment) => {
+        return <tr key={payment.id} className={cancelled ? 'cancelled-row' : ''}><td dir="ltr">{payment.receipt_number || `#${payment.id}`}</td><td>{formatDate(payment.payment_date)}</td><td>{formatIqd(payment.amount)}</td><td>{payment.notes || '—'}{payment.edited_at && <small className="block mt-1">معدلة: {payment.edit_reason}</small>}</td><td>{cancelled ? <span><b className="status status-archived">ملغاة</b><small className="block mt-1">{payment.cancellation_reason} · {formatBaghdadDateTime(payment.cancelled_at)}</small></span> : <span className="flex flex-wrap gap-1"><b className="status status-paid">نشطة</b>{payment.edited_at && <b className="status status-today">معدلة</b>}</span>}</td><td><div className="flex gap-2"><button className="mini-button" onClick={() => props.onReceipt(payment)}>الوصل</button>{!cancelled && <><button className="mini-button" onClick={() => props.onEditPayment(payment)}>تعديل</button><button className="mini-button danger" onClick={() => props.onCancel(payment)}>إلغاء</button></>}</div></td></tr>;
+      })}</tbody></table></div><div className="mobile-payment-list">{sortedPayments.map((payment) => {
         const cancelled = payment.status === 'cancelled';
         return <article className={cancelled ? 'mobile-payment-card cancelled' : 'mobile-payment-card'} key={payment.id}>
           <header><strong>{formatIqd(payment.amount)}</strong><span className={cancelled ? 'status status-archived' : 'status status-paid'}>{cancelled ? 'ملغاة' : 'نشطة'}</span></header>
           <div><span>{formatDate(payment.payment_date)}</span><b dir="ltr">{payment.receipt_number || `#${payment.id}`}</b></div>
           {payment.notes && <p>{payment.notes}</p>}
+          {payment.edited_at && <p>معدلة: {payment.edit_reason}</p>}
           {cancelled && <p className="late-text">{payment.cancellation_reason} · {formatBaghdadDateTime(payment.cancelled_at)}</p>}
-          <footer className="no-print"><button className="mini-button" onClick={() => props.onReceipt(payment)}>عرض الوصل</button>{!cancelled && <button className="mini-button danger" onClick={() => props.onCancel(payment)}>إلغاء الدفعة</button>}</footer>
+          <footer className="no-print"><button className="mini-button" onClick={() => props.onReceipt(payment)}>عرض الوصل</button>{!cancelled && <><button className="mini-button" onClick={() => props.onEditPayment(payment)}>تعديل</button><button className="mini-button danger" onClick={() => props.onCancel(payment)}>إلغاء الدفعة</button></>}</footer>
         </article>;
       })}</div></> : <EmptyState text="لا توجد دفعات لهذا العقد بعد." />}
     </section>
@@ -102,6 +110,6 @@ function Metric({ label, value, accent = false }: { label: string; value: string
   return <div className={accent ? 'financial-metric accent' : 'financial-metric'}><small>{label}</small><strong>{value}</strong></div>;
 }
 
-function Info({ label, value, wide = false }: { label: string; value: string; wide?: boolean }) {
+function Info({ label, value, wide = false }: { label: string; value: ReactNode; wide?: boolean }) {
   return <div className={wide ? 'info-wide' : ''}><span>{label}</span><strong>{value}</strong></div>;
 }

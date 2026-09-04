@@ -45,6 +45,7 @@ export interface Contract {
   current_installment_paid: number;
   current_installment_remaining: number;
   next_due_date?: string;
+  manual_reminder_date?: string;
   status: ContractStatus;
   archived?: boolean | string;
   created_at?: string;
@@ -64,6 +65,8 @@ export interface Payment {
   status?: PaymentStatus;
   cancellation_reason?: string;
   cancelled_at?: string;
+  edited_at?: string;
+  edit_reason?: string;
   paid_after?: number;
   remaining_after?: number;
   updated_at?: string;
