@@ -24,7 +24,7 @@ var SHEETS = {
     added: [
       'paid_amount', 'remaining_amount', 'current_installment_paid',
       'current_installment_remaining', 'next_due_date', 'status', 'archived',
-      'created_at', 'updated_at', 'manual_reminder_date'
+      'created_at', 'updated_at', 'manual_reminder_date', 'reminder_mode'
     ]
   },
   payments: {
@@ -483,7 +483,8 @@ function addContract_(data) {
     archived: false,
     created_at: now,
     updated_at: now,
-    manual_reminder_date: ''
+    manual_reminder_date: '',
+    reminder_mode: 'automatic'
   };
   row = enrichContract_(row, []);
   appendObject_('contracts', row);
@@ -525,19 +526,20 @@ function restoreContract_(data) {
 }
 
 function setManualReminderDate_(data) {
-  return changeManualReminderDate_(data, requireDate_(data.manual_reminder_date, 'موعد التذكير'));
+  return changeManualReminderDate_(data, requireDate_(data.manual_reminder_date, 'موعد التذكير'), 'manual');
 }
 
 function clearManualReminderDate_(data) {
-  return changeManualReminderDate_(data, '');
+  return changeManualReminderDate_(data, '', 'automatic');
 }
 
-function changeManualReminderDate_(data, reminderDate) {
+function changeManualReminderDate_(data, reminderDate, reminderMode) {
   var contractId = positiveInteger_(data.contract_id || data.id, 'معرف العقد');
   var table = readTable_('contracts');
   var found = findById_(table, contractId);
   if (!found) throw new Error('العقد غير موجود');
   found.object.manual_reminder_date = reminderDate;
+  found.object.reminder_mode = reminderMode;
   found.object.updated_at = now_();
   writeObjectRow_(table, found.rowNumber, found.object);
   var payments = indexPaymentsByContract_(listPayments_())[contractId] || [];
@@ -794,6 +796,10 @@ function enrichContract_(row, payments) {
     contract.parts[currentIndex] - allocation.paidByInstallment[currentIndex];
   row.next_due_date = nextDue;
   row.manual_reminder_date = dateText_(row.manual_reminder_date);
+  var reminderMode = text_(row.reminder_mode).toLowerCase();
+  row.reminder_mode = reminderMode === 'manual' || reminderMode === 'automatic'
+    ? reminderMode
+    : row.manual_reminder_date ? 'manual' : 'automatic';
   row.status = status;
   row.archived = archived;
   return row;

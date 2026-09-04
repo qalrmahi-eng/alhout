@@ -3,6 +3,7 @@ export type ContractStatus = 'منتظم' | 'مستحق اليوم' | 'متأخ�
 export type CustomerStatus = ContractStatus;
 export type InstallmentStatus = 'قادم' | 'مستحق اليوم' | 'جزئي' | 'متأخر' | 'مدفوع';
 export type PaymentStatus = 'active' | 'cancelled';
+export type ReminderMode = 'automatic' | 'manual';
 
 export interface Settings {
   id?: number;
@@ -46,6 +47,7 @@ export interface Contract {
   current_installment_remaining: number;
   next_due_date?: string;
   manual_reminder_date?: string;
+  reminder_mode?: ReminderMode;
   status: ContractStatus;
   archived?: boolean | string;
   created_at?: string;

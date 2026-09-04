@@ -6,7 +6,7 @@ import { EmptyState, StatusBadge } from '@/components/business-ui';
 import { formatBaghdadDateTime } from '@/lib/dates';
 import { formatContractNumber, formatDate, formatIqd } from '@/lib/formatters';
 import { buildWhatsAppUrl } from '@/lib/whatsapp';
-import { effectiveDueDate } from '@/lib/due-date';
+import { effectiveDueDate, reminderMode } from '@/lib/due-date';
 import type { ContractView, Payment } from '@/types/domain';
 
 type Props = {
@@ -43,7 +43,7 @@ export default function ContractDetails(props: Props) {
         <div className="flex flex-wrap gap-2 no-print">
           <button className="secondary-button compact" onClick={whatsapp} disabled={!effectiveDueDate(contract) || contract.remaining_amount <= 0}><MessageCircle size={16} /> واتساب</button>
           <button className="secondary-button compact" onClick={props.onEdit} disabled={contract.status === 'مؤرشف'}><Pencil size={16} /> تعديل</button>
-          <button className="secondary-button compact" onClick={props.onReminder}><CalendarClock size={16} /> {contract.manual_reminder_date ? 'تعديل موعد التذكير' : 'تحديد موعد التذكير'}</button>
+          <button className="secondary-button compact" onClick={props.onReminder}><CalendarClock size={16} /> {reminderMode(contract) === 'manual' ? 'تعديل موعد التذكير' : 'تحديد موعد التذكير'}</button>
           <button className="secondary-button compact" onClick={props.onArchive}>{contract.status === 'مؤرشف' ? <RotateCcw size={16} /> : <Archive size={16} />}{contract.status === 'مؤرشف' ? 'استرجاع' : 'أرشفة'}</button>
           <button className="primary-button compact" onClick={props.onPay} disabled={['مكتمل', 'مؤرشف'].includes(progress.status)}><WalletCards size={16} /> إضافة دفعة</button>
         </div>
@@ -71,7 +71,7 @@ export default function ContractDetails(props: Props) {
           <Info label="تاريخ التسليم" value={formatDate(contract.delivery_date)} />
           <Info label="أول استحقاق" value={formatDate(contract.first_due_date)} />
           <Info label="آخر استحقاق متوقع" value={formatDate(contract.expected_end_date)} />
-          <Info label="موعد التذكير" value={<span className="reminder-info-value">{formatDate(effectiveDueDate(contract))}{contract.manual_reminder_date && <em className="muted-badge">تذكير يدوي</em>}</span>} />
+          <Info label="موعد التذكير" value={<span className="reminder-info-value">{formatDate(effectiveDueDate(contract))}{reminderMode(contract) === 'manual' && <em className="muted-badge">تذكير يدوي</em>}</span>} />
           <Info label="نسبة الربح" value={`${contract.profit_percent}%`} />
           <Info label="مبلغ الربح" value={formatIqd(contract.profit_amount)} />
           <Info label="الكفيل" value={contract.guarantor_name || '—'} />

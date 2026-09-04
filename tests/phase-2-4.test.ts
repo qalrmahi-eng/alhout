@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildReminders, buildRemindersForDate } from '@/lib/reminders';
-import { effectiveDueDate, expectedPaymentAmount } from '@/lib/due-date';
+import { addCalendarMonth, effectiveDueDate, expectedPaymentAmount } from '@/lib/due-date';
 import { reportPresetRange } from '@/lib/reports';
 import { buildWhatsAppMessage, buildWhatsAppUrl, normalizeIraqiPhone } from '@/lib/whatsapp';
 import type { Contract, Customer } from '@/types/domain';
@@ -83,13 +83,23 @@ describe('مركز التذكيرات', () => {
   it('يستخدم الموعد اليدوي والفلترة حسب التاريخ ثم يعود للتلقائي عند مسحه', () => {
     const row = contract(8, '2026-10-11');
     row.manual_reminder_date = '2026-09-07';
+    row.reminder_mode = 'automatic';
+    expect(effectiveDueDate(row)).toBe('2026-10-11');
+    row.reminder_mode = 'manual';
     expect(effectiveDueDate(row)).toBe('2026-09-07');
     expect(buildReminders([customer], [row], '2026-09-04')[0]).toMatchObject({ category: 'after_3', dueDate: '2026-09-07' });
     expect(buildRemindersForDate([customer], [row], '2026-09-04', '2026-09-07')).toHaveLength(1);
     expect(buildWhatsAppMessage(customer, row, '2026-09-04')).toContain('07/09/2026');
-    row.manual_reminder_date = '';
+    row.reminder_mode = 'automatic';
     expect(effectiveDueDate(row)).toBe('2026-10-11');
     expect(buildRemindersForDate([customer], [row], '2026-09-04', '2026-09-07')).toHaveLength(0);
+  });
+
+  it('يرحّل التاريخ شهراً تقويمياً واحداً مع ضبط نهاية الشهر', () => {
+    expect(addCalendarMonth('2026-01-31')).toBe('2026-02-28');
+    expect(addCalendarMonth('2024-01-31')).toBe('2024-02-29');
+    expect(addCalendarMonth('2026-03-31')).toBe('2026-04-30');
+    expect(addCalendarMonth('2026-12-15')).toBe('2027-01-15');
   });
 });
 

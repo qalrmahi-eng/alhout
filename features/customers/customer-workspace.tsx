@@ -4,7 +4,7 @@ import { ArrowRight, CalendarClock, Phone, Plus, Search, Settings, Trash2, Walle
 import { EmptyState, StatusBadge } from '@/components/business-ui';
 import { customerAvatar, customerMatchesSearch } from '@/lib/sheets';
 import { formatContractNumber, formatDate, formatIqd } from '@/lib/formatters';
-import { effectiveDueDate } from '@/lib/due-date';
+import { effectiveDueDate, reminderMode } from '@/lib/due-date';
 import type { ContractStatus, ContractView, Customer } from '@/types/domain';
 
 type Props = {
@@ -75,7 +75,7 @@ export default function CustomerWorkspace(props: Props) {
                 <span><small>المتبقي</small><strong>{formatIqd(contract.remaining_amount)}</strong></span>
               </div>
               <div className="contract-facts"><span>{contract.profit_percent}% ربح</span><span>{contract.installments} شهر</span><span>قسط {formatIqd(contract.installment_value)}</span></div>
-              <div className="next-due"><CalendarClock size={16} /><span>موعد المتابعة</span><strong>{formatDate(effectiveDueDate(contract))}</strong>{contract.manual_reminder_date && <em className="muted-badge">يدوي</em>}</div>
+              <div className="next-due"><CalendarClock size={16} /><span>موعد المتابعة</span><strong>{formatDate(effectiveDueDate(contract))}</strong>{reminderMode(contract) === 'manual' && <em className="muted-badge">يدوي</em>}</div>
               <div className="card-actions">
                 <button className="primary-button compact" disabled={['مكتمل', 'مؤرشف'].includes(contract.status)} onClick={() => props.onPay(contract)}><WalletCards size={16} /> دفعة</button>
                 <button className="secondary-button compact" onClick={() => props.onOpenContract(contract)}>تفاصيل العقد</button>

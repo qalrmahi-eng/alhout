@@ -142,6 +142,11 @@ export function normalizeCustomers(value: unknown): Customer[] {
 export function normalizeContract(value: unknown): Contract {
   const record = asRecord(value);
   const status = customerStatus(record.status);
+  const manualReminderDate = normalizeSheetDate(record.manual_reminder_date);
+  const rawReminderMode = text(record.reminder_mode).toLowerCase();
+  const reminderMode = rawReminderMode === 'manual' || rawReminderMode === 'automatic'
+    ? rawReminderMode
+    : manualReminderDate ? 'manual' : 'automatic';
   return {
     ...record,
     id: number(record.id),
@@ -163,7 +168,8 @@ export function normalizeContract(value: unknown): Contract {
     current_installment_paid: number(record.current_installment_paid),
     current_installment_remaining: number(record.current_installment_remaining),
     next_due_date: normalizeSheetDate(record.next_due_date),
-    manual_reminder_date: normalizeSheetDate(record.manual_reminder_date),
+    manual_reminder_date: manualReminderDate,
+    reminder_mode: reminderMode,
     status: status as Contract['status'],
     archived: boolean(record.archived, status === 'مؤرشف'),
     created_at: normalizeSheetDateTime(record.created_at),

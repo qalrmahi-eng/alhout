@@ -84,7 +84,7 @@ const contractHeaders = [
   'installments', 'installment_value', 'delivery_date', 'first_due_date', 'expected_end_date',
   'guarantor_name', 'guarantor_phone', 'notes', 'paid_amount', 'remaining_amount',
   'current_installment_paid', 'current_installment_remaining', 'next_due_date', 'status',
-  'archived', 'created_at', 'updated_at', 'manual_reminder_date',
+  'archived', 'created_at', 'updated_at', 'manual_reminder_date', 'reminder_mode',
 ];
 const paymentHeaders = [
   'id', 'customer_id', 'amount', 'payment_date', 'notes', 'created_at', 'contract_id',
@@ -225,11 +225,12 @@ describe('سيناريو Phase 1 في Apps Script', () => {
     const secondBefore = gas.listContracts_().find((row) => row.id === second.id);
 
     const automaticDue = gas.listContracts_().find((row) => row.id === first.id)?.next_due_date;
-    expect(gas.setManualReminderDate_({ contract_id: first.id, manual_reminder_date: '2026-09-15' })).toMatchObject({ manual_reminder_date: '2026-09-15', next_due_date: automaticDue });
-    expect(gas.clearManualReminderDate_({ contract_id: first.id })).toMatchObject({ manual_reminder_date: '', next_due_date: automaticDue });
+    expect(first).toMatchObject({ reminder_mode: 'automatic', manual_reminder_date: '' });
+    expect(gas.setManualReminderDate_({ contract_id: first.id, manual_reminder_date: '2026-09-15' })).toMatchObject({ reminder_mode: 'manual', manual_reminder_date: '2026-09-15', next_due_date: automaticDue });
 
     const edited = gas.updatePayment_({ payment_id: payment1.id, amount: 150_000, payment_date: '2026-02-01', notes: 'تصحيح', edit_reason: 'خطأ إدخال' });
     expect(edited).toMatchObject({ amount: 150_000, payment_date: '2026-02-01', notes: 'تصحيح', edit_reason: 'خطأ إدخال', paid_after: 150_000, remaining_after: 950_000 });
+    expect(edited.contract_after).toMatchObject({ reminder_mode: 'manual', manual_reminder_date: '2026-09-15' });
     const after = gas.listPayments_();
     expect(after.find((row) => row.id === payment2.id)).toMatchObject({ paid_after: 350_000, remaining_after: 750_000 });
     expect(after.find((row) => row.id === payment3.id)).toMatchObject({ paid_after: 650_000, remaining_after: 450_000 });
@@ -239,7 +240,13 @@ describe('سيناريو Phase 1 في Apps Script', () => {
     expect(gas.reportsSummary_({ from: '2026-02-01', to: '2026-02-28' })).toMatchObject({ received_amount: 450_000, payments_count: 3 });
     expect(() => gas.updatePayment_({ payment_id: payment1.id, amount: 900_000, edit_reason: 'قيمة غير صحيحة' })).toThrow('أكبر من إجمالي العقد');
 
+    const addedWhileManual = gas.addPayment_({ contract_id: first.id, amount: 50_000, payment_date: '2026-03-20', request_id: 'manual-preserved' });
+    expect(addedWhileManual.contract_after).toMatchObject({ reminder_mode: 'manual', manual_reminder_date: '2026-09-15' });
     gas.cancelPayment_({ payment_id: payment2.id, cancellation_reason: 'اختبار' });
+    expect(gas.listContracts_().find((row) => row.id === first.id)).toMatchObject({ reminder_mode: 'manual', manual_reminder_date: '2026-09-15' });
     expect(() => gas.updatePayment_({ payment_id: payment2.id, amount: 1, edit_reason: 'ممنوع' })).toThrow('لا يمكن تعديل دفعة ملغاة');
+
+    const currentAutomaticDue = gas.listContracts_().find((row) => row.id === first.id)?.next_due_date;
+    expect(gas.clearManualReminderDate_({ contract_id: first.id })).toMatchObject({ reminder_mode: 'automatic', manual_reminder_date: '', next_due_date: currentAutomaticDue });
   });
 });

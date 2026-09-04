@@ -6,6 +6,7 @@ import { EmptyState, PanelTitle } from '@/components/business-ui';
 import { formatContractNumber, formatDate, formatIqd } from '@/lib/formatters';
 import { buildReminders, buildRemindersForDate, reminderCategories, type ReminderCategory } from '@/lib/reminders';
 import { buildWhatsAppUrl } from '@/lib/whatsapp';
+import { reminderMode } from '@/lib/due-date';
 import type { ContractView, Customer } from '@/types/domain';
 
 type Props = {
@@ -50,7 +51,7 @@ export default function ReminderCenter(props: Props) {
           <div className="reminder-person"><strong>{reminder.customer.name}</strong><a href={`tel:${reminder.customer.phone}`}>{reminder.customer.phone || 'بدون هاتف'}</a></div>
           <div><small>العقد</small><strong dir="ltr">{formatContractNumber(contract.id)}</strong></div>
           <div><small>المطلوب الآن</small><strong>{formatIqd(reminder.amount)}</strong></div>
-          <div><small>موعد المتابعة</small><strong>{formatDate(reminder.dueDate)}</strong><em className={reminder.days < 0 ? 'late-text' : ''}>{timing}</em>{contract.manual_reminder_date && <span className="muted-badge">يدوي</span>}</div>
+          <div><small>موعد المتابعة</small><strong>{formatDate(reminder.dueDate)}</strong><em className={reminder.days < 0 ? 'late-text' : ''}>{timing}</em>{reminderMode(contract) === 'manual' && <span className="muted-badge">يدوي</span>}</div>
           <div><small>متبقي العقد</small><strong>{formatIqd(contract.remaining_amount)}</strong></div>
           <div className="reminder-actions"><button className="secondary-button compact" onClick={() => whatsapp(contract)}><MessageCircle size={16} /> واتساب</button><button className="primary-button compact" onClick={() => props.onPay(contract)}><WalletCards size={16} /> دفعة</button></div>
         </article>;
