@@ -53,6 +53,10 @@ export function buildReminders(customers: Customer[], contracts: Contract[], tod
   return buildOperationalReminders(customers, contracts, today).filter((reminder) => reminder.category !== null);
 }
 
+export function reminderBadgeCount(customers: Customer[], contracts: Contract[], today: string): number {
+  return buildReminders(customers, contracts, today).length;
+}
+
 export function buildRemindersForDate(
   customers: Customer[], contracts: Contract[], today: string, selectedDate: string,
 ): ReminderItem[] {

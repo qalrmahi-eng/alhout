@@ -24,7 +24,8 @@ var SHEETS = {
     added: [
       'paid_amount', 'remaining_amount', 'current_installment_paid',
       'current_installment_remaining', 'next_due_date', 'status', 'archived',
-      'created_at', 'updated_at', 'manual_reminder_date', 'reminder_mode'
+      'created_at', 'updated_at', 'manual_reminder_date', 'reminder_mode',
+      'manual_due_amount'
     ]
   },
   payments: {
@@ -457,6 +458,9 @@ function addContract_(data) {
   var installments = positiveInteger_(data.installments, 'عدد الأقساط');
   var deliveryDate = requireDate_(data.delivery_date, 'تاريخ تسليم المبلغ');
   var firstDueDate = requireDate_(data.first_due_date, 'تاريخ أول استحقاق');
+  if (hasDateValue_(data.expected_end_date)) {
+    installments = inclusiveMonthlyInstallments_(firstDueDate, requireDate_(data.expected_end_date, 'تاريخ آخر دفعة'));
+  }
   var calculated = contract_(principal, profitPercent, installments);
   var now = now_();
   var row = {
@@ -484,7 +488,8 @@ function addContract_(data) {
     created_at: now,
     updated_at: now,
     manual_reminder_date: '',
-    reminder_mode: 'automatic'
+    reminder_mode: 'automatic',
+    manual_due_amount: ''
   };
   row = enrichContract_(row, []);
   appendObject_('contracts', row);
@@ -506,6 +511,12 @@ function updateContract_(data) {
   if (data.installments !== undefined) found.object.installments = positiveInteger_(data.installments, 'عدد الأقساط');
   if (hasDateValue_(data.delivery_date)) found.object.delivery_date = requireDate_(data.delivery_date, 'تاريخ تسليم المبلغ');
   if (hasDateValue_(data.first_due_date)) found.object.first_due_date = requireDate_(data.first_due_date, 'تاريخ أول استحقاق');
+  if (hasDateValue_(data.expected_end_date)) {
+    found.object.installments = inclusiveMonthlyInstallments_(
+      requireDate_(found.object.first_due_date, 'تاريخ أول استحقاق'),
+      requireDate_(data.expected_end_date, 'تاريخ آخر دفعة')
+    );
+  }
 
   var calculated = contract_(found.object.principal, found.object.profit_percent, found.object.installments);
   var payments = indexPaymentsByContract_(listPayments_())[contractId] || [];
@@ -540,10 +551,17 @@ function changeManualReminderDate_(data, reminderDate, reminderMode) {
   if (!found) throw new Error('العقد غير موجود');
   found.object.manual_reminder_date = reminderDate;
   found.object.reminder_mode = reminderMode;
+  found.object.manual_due_amount = reminderMode === 'manual' && data.manual_due_amount !== undefined && data.manual_due_amount !== ''
+    ? positiveInteger_(data.manual_due_amount, 'قيمة الدفعة القادمة')
+    : '';
   found.object.updated_at = now_();
-  writeObjectRow_(table, found.rowNumber, found.object);
   var payments = indexPaymentsByContract_(listPayments_())[contractId] || [];
-  return enrichContract_(found.object, payments);
+  var enriched = enrichContract_(found.object, payments);
+  if (enriched.manual_due_amount !== '' && enriched.manual_due_amount > enriched.remaining_amount) {
+    throw new Error('قيمة الدفعة القادمة أكبر من المبلغ المتبقي');
+  }
+  writeObjectRow_(table, found.rowNumber, enriched);
+  return enriched;
 }
 
 function setContractArchived_(contractId, archived) {
@@ -800,6 +818,8 @@ function enrichContract_(row, payments) {
   row.reminder_mode = reminderMode === 'manual' || reminderMode === 'automatic'
     ? reminderMode
     : row.manual_reminder_date ? 'manual' : 'automatic';
+  var manualDueAmount = number_(row.manual_due_amount, NaN);
+  row.manual_due_amount = isFinite(manualDueAmount) && manualDueAmount > 0 ? Math.round(manualDueAmount) : '';
   row.status = status;
   row.archived = archived;
   return row;
@@ -843,6 +863,17 @@ function dueDate_(firstDue, index, frequency) {
   var month = absoluteMonth % 12;
   var lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
   return Utilities.formatDate(new Date(Date.UTC(year, month, Math.min(first.getUTCDate(), lastDay))), 'UTC', 'yyyy-MM-dd');
+}
+
+function inclusiveMonthlyInstallments_(firstDue, lastDue) {
+  var first = firstDue.split('-').map(Number);
+  var last = lastDue.split('-').map(Number);
+  var monthDifference = (last[0] - first[0]) * 12 + last[1] - first[1];
+  if (monthDifference < 0) throw new Error('تاريخ آخر دفعة لا يمكن أن يسبق تاريخ أول دفعة');
+  if (dueDate_(firstDue, monthDifference, 'monthly') !== lastDue) {
+    throw new Error('تاريخ آخر دفعة يجب أن يطابق دورة الأقساط الشهرية');
+  }
+  return monthDifference + 1;
 }
 
 /**

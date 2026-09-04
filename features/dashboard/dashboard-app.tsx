@@ -33,6 +33,7 @@ import ReceiptModal from '@/features/receipts/receipt-modal';
 import ReminderCenter from '@/features/reminders/reminder-center';
 import ReportsSection from '@/features/reports/reports-section';
 import { baghdadToday, indexPaymentsByContract, summarizeContract } from '@/lib/finance';
+import { reminderBadgeCount } from '@/lib/reminders';
 import {
   archiveContract,
   cancelPayment,
@@ -150,6 +151,10 @@ export default function DashboardApp({ username }: { username: string }) {
 
   const selectedContract = contractViews.find((contract) => contract.id === selectedContractId) || null;
   const editPaymentContract = editPaymentTarget ? contractViews.find((contract) => contract.id === editPaymentTarget.contract_id) || null : null;
+  const reminderCount = useMemo(
+    () => reminderBadgeCount(customers, contracts, today),
+    [customers, contracts],
+  );
 
   function go(next: Section) {
     setSection(next); setSelectedContractId(null); setSidebarOpen(false);
@@ -191,7 +196,7 @@ export default function DashboardApp({ username }: { username: string }) {
   return <div className="app-shell">
     <aside className={sidebarOpen ? 'sidebar sidebar-open' : 'sidebar'}>
       <div className="flex items-center justify-between px-5 py-7"><WhaleLogo /><button className="icon-button lg:hidden" onClick={() => setSidebarOpen(false)}><X size={19} /></button></div>
-      <nav className="sidebar-nav">{navigation.map((item) => <button key={item.id} className={section === item.id ? 'nav-item nav-item-active' : 'nav-item'} onClick={() => go(item.id)}><item.icon size={19} />{item.label}{item.id === 'reminders' && summary.overdue_contracts_count > 0 && <b>{summary.overdue_contracts_count}</b>}</button>)}</nav>
+      <nav className="sidebar-nav">{navigation.map((item) => <button key={item.id} className={section === item.id ? 'nav-item nav-item-active' : 'nav-item'} onClick={() => go(item.id)}><item.icon size={19} />{item.label}{item.id === 'reminders' && reminderCount > 0 && <b>{reminderCount}</b>}</button>)}</nav>
       <div className="mt-auto space-y-2 p-4">
         <button className="nav-item" onClick={() => setDark((value) => !value)}>{dark ? <Sun size={19} /> : <Moon size={19} />}{dark ? 'الوضع النهاري' : 'الوضع الليلي'}</button>
         <button className="nav-item text-rose-300" onClick={logout}><LogOut size={19} /> تسجيل الخروج</button>

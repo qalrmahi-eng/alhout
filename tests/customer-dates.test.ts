@@ -10,6 +10,7 @@ function contractForm(deliveryDate: string, firstDueDate: string): FormData {
   form.set('installments', '10');
   form.set('delivery_date', deliveryDate);
   form.set('first_due_date', firstDueDate);
+  form.set('expected_end_date', '2027-05-10');
   return form;
 }
 

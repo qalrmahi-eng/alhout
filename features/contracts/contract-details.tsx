@@ -83,6 +83,7 @@ export default function ContractDetails(props: Props) {
 
     <section className="panel overflow-hidden">
       <h3 className="section-heading">جدول الأقساط</h3>
+      {reminderMode(contract) === 'manual' && <p className="mt-2 text-xs leading-6 text-amber-700">هذا جدول حسابي داخلي، والمتابعة الفعلية تعتمد موعد التذكير اليدوي.</p>}
       <div className="table-wrap mt-4 max-h-96"><table><thead><tr><th>#</th><th>الاستحقاق</th><th>القيمة</th><th>المدفوع</th><th>المتبقي</th><th>الحالة</th></tr></thead><tbody>{progress.schedule.map((row) => <tr key={row.number}><td>{row.number}</td><td>{formatDate(row.dueDate)}</td><td>{formatIqd(row.amount)}</td><td>{formatIqd(row.paid)}</td><td>{formatIqd(row.remaining)}</td><td><span className="status">{row.status}</span></td></tr>)}</tbody></table></div>
     </section>
 

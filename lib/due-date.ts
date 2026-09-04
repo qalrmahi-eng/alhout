@@ -35,5 +35,9 @@ export function expectedPaymentAmount(
   contract: Contract,
   remaining = contract.remaining_amount,
 ): number {
-  return Math.max(0, Math.min(contract.installment_value, remaining));
+  const fallback = Math.min(contract.installment_value, remaining);
+  const requested = reminderMode(contract) === 'manual' && contract.manual_due_amount !== undefined
+    ? contract.manual_due_amount
+    : fallback;
+  return Math.max(0, Math.min(requested, remaining));
 }

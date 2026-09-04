@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addInstallmentPeriod,
   calculateContract,
+  inclusiveMonthlyInstallments,
   indexPaymentsByContract,
   splitInstallments,
   summarizeContract,
@@ -58,6 +59,9 @@ describe('محرك العقود المالي', () => {
     expect(addInstallmentPeriod('2026-01-31', 1, 'monthly')).toBe('2026-02-28');
     expect(addInstallmentPeriod('2026-01-31', 2, 'monthly')).toBe('2026-03-31');
     expect(addInstallmentPeriod('2024-01-31', 1, 'monthly')).toBe('2024-02-29');
+    expect(addInstallmentPeriod('2026-02-01', 9, 'monthly')).toBe('2026-11-01');
+    expect(inclusiveMonthlyInstallments('2026-02-01', '2026-12-01')).toBe(11);
+    expect(inclusiveMonthlyInstallments('2026-01-31', '2026-04-30')).toBe(4);
   });
 
   it('ينفذ سيناريو الدفعة الكاملة ثم الجزئية ثم متعددة الأقساط وفق FIFO', () => {

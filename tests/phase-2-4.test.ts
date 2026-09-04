@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildReminders, buildRemindersForDate } from '@/lib/reminders';
+import { buildReminders, buildRemindersForDate, reminderBadgeCount } from '@/lib/reminders';
 import { addCalendarMonth, effectiveDueDate, expectedPaymentAmount } from '@/lib/due-date';
 import { reportPresetRange } from '@/lib/reports';
 import { buildWhatsAppMessage, buildWhatsAppUrl, normalizeIraqiPhone } from '@/lib/whatsapp';
@@ -86,13 +86,39 @@ describe('مركز التذكيرات', () => {
     row.reminder_mode = 'automatic';
     expect(effectiveDueDate(row)).toBe('2026-10-11');
     row.reminder_mode = 'manual';
+    row.manual_due_amount = 275_000;
     expect(effectiveDueDate(row)).toBe('2026-09-07');
+    expect(expectedPaymentAmount(row)).toBe(275_000);
     expect(buildReminders([customer], [row], '2026-09-04')[0]).toMatchObject({ category: 'after_3', dueDate: '2026-09-07' });
     expect(buildRemindersForDate([customer], [row], '2026-09-04', '2026-09-07')).toHaveLength(1);
     expect(buildWhatsAppMessage(customer, row, '2026-09-04')).toContain('07/09/2026');
     row.reminder_mode = 'automatic';
     expect(effectiveDueDate(row)).toBe('2026-10-11');
     expect(buildRemindersForDate([customer], [row], '2026-09-04', '2026-09-07')).toHaveLength(0);
+  });
+
+  it('يستخدم Badge ومركز التذكير نفس البيانات عند نقل الموعد اليدوي', () => {
+    const automatic = [contract(1, '2026-09-04'), contract(2, '2026-09-05')];
+    const manual = contract(3, '2026-10-01');
+    manual.reminder_mode = 'manual';
+    manual.manual_reminder_date = '2026-09-07';
+    const rows = [...automatic, manual];
+    expect(reminderBadgeCount([customer], rows, '2026-09-04')).toBe(3);
+    expect(buildReminders([customer], rows, '2026-09-04')).toHaveLength(3);
+    manual.manual_reminder_date = '2026-09-08';
+    expect(reminderBadgeCount([customer], rows, '2026-09-04')).toBe(2);
+    manual.manual_reminder_date = '2026-09-07';
+    expect(reminderBadgeCount([customer], rows, '2026-09-04')).toBe(3);
+  });
+
+  it('يضبط المبلغ اليدوي على كامل المتبقي ولا يتجاوزه', () => {
+    const row = contract(9, '2026-09-07');
+    row.reminder_mode = 'manual';
+    row.manual_reminder_date = '2026-09-07';
+    row.manual_due_amount = row.remaining_amount;
+    expect(expectedPaymentAmount(row)).toBe(450_000);
+    row.remaining_amount = 200_000;
+    expect(expectedPaymentAmount(row)).toBe(200_000);
   });
 
   it('يرحّل التاريخ شهراً تقويمياً واحداً مع ضبط نهاية الشهر', () => {

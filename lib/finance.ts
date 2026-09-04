@@ -57,7 +57,7 @@ export function splitInstallments(totalInput: number, count: number): number[] {
 function parseDateOnly(value: string): Date {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error('التاريخ غير صالح');
   const date = new Date(`${value}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) throw new Error('التاريخ غير صالح');
+  if (Number.isNaN(date.getTime()) || isoDate(date) !== value) throw new Error('التاريخ غير صالح');
   return date;
 }
 
@@ -86,6 +86,18 @@ export function addInstallmentPeriod(
   const month = absoluteMonth % 12;
   const day = Math.min(anchorDay, daysInUtcMonth(year, month));
   return isoDate(new Date(Date.UTC(year, month, day)));
+}
+
+export function inclusiveMonthlyInstallments(firstDueDate: string, lastDueDate: string): number {
+  const first = parseDateOnly(firstDueDate);
+  const last = parseDateOnly(lastDueDate);
+  const monthDifference = (last.getUTCFullYear() - first.getUTCFullYear()) * 12
+    + last.getUTCMonth() - first.getUTCMonth();
+  if (monthDifference < 0) throw new Error('تاريخ آخر دفعة لا يمكن أن يسبق تاريخ أول دفعة');
+  if (addInstallmentPeriod(firstDueDate, monthDifference, 'monthly') !== lastDueDate) {
+    throw new Error('تاريخ آخر دفعة يجب أن يطابق دورة الأقساط الشهرية');
+  }
+  return monthDifference + 1;
 }
 
 export function baghdadToday(now = new Date()): string {

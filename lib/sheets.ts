@@ -169,6 +169,7 @@ export function normalizeContract(value: unknown): Contract {
     current_installment_remaining: number(record.current_installment_remaining),
     next_due_date: normalizeSheetDate(record.next_due_date),
     manual_reminder_date: manualReminderDate,
+    manual_due_amount: optionalNumber(record.manual_due_amount),
     reminder_mode: reminderMode,
     status: status as Contract['status'],
     archived: boolean(record.archived, status === 'مؤرشف'),
@@ -294,8 +295,12 @@ export const archiveContract = (contractId: number) =>
   request('archive_contract', normalizeContract, { contract_id: contractId });
 export const restoreContract = (contractId: number) =>
   request('restore_contract', normalizeContract, { contract_id: contractId });
-export const setManualReminderDate = (contractId: number, date: string) =>
-  request('set_manual_reminder_date', normalizeContract, { contract_id: contractId, manual_reminder_date: date });
+export const setManualReminderDate = (contractId: number, date: string, amount?: number) =>
+  request('set_manual_reminder_date', normalizeContract, {
+    contract_id: contractId,
+    manual_reminder_date: date,
+    manual_due_amount: amount,
+  });
 export const clearManualReminderDate = (contractId: number) =>
   request('clear_manual_reminder_date', normalizeContract, { contract_id: contractId });
 export const archiveCustomer = (customerId: number) =>

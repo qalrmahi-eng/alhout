@@ -66,11 +66,11 @@ describe('بيانات الوصل', () => {
       contract_total: 1_100_000, installments: 10, installment_value: 110_000,
       delivery_date: '2026-01-01', first_due_date: '2026-02-01', expected_end_date: '2026-11-01',
       paid_amount: 1_050_000, remaining_amount: 50_000, current_installment_paid: 60_000,
-      current_installment_remaining: 50_000, next_due_date: '2026-11-01', manual_reminder_date: '2026-09-15', status: 'منتظم',
+      current_installment_remaining: 50_000, next_due_date: '2026-11-01', reminder_mode: 'manual', manual_reminder_date: '2026-09-15', manual_due_amount: 45_000, status: 'منتظم',
     };
     const payment: Payment = { id: 2, customer_id: 1, contract_id: 1, amount: 50_000, payment_date: '2026-09-01', paid_after: 1_050_000, remaining_after: 50_000 };
     const snapshot = buildReceiptSnapshot(customer, contract, payment, summarizeContract(contract, [{ ...payment, amount: 1_050_000 }], '2026-09-01'));
-    expect(snapshot).toMatchObject({ nextDueDate: '2026-09-15', expectedPaymentAmount: 50_000, remaining: 50_000 });
+    expect(snapshot).toMatchObject({ nextDueDate: '2026-09-15', expectedPaymentAmount: 45_000, remaining: 50_000 });
   });
 
   it('يبقي حفظ الدفعة منفصلاً عن فشل إنشاء الصورة', () => {

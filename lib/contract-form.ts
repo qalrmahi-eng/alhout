@@ -21,6 +21,7 @@ export function buildContractFormPayload(form: FormData): Record<string, unknown
     installments: Number(text(form, 'installments')),
     delivery_date: requiredDate(form, 'delivery_date', 'تاريخ تسليم المبلغ'),
     first_due_date: requiredDate(form, 'first_due_date', 'تاريخ أول استحقاق'),
+    expected_end_date: requiredDate(form, 'expected_end_date', 'تاريخ آخر دفعة'),
     guarantor_name: text(form, 'guarantor_name'),
     guarantor_phone: text(form, 'guarantor_phone'),
     notes: text(form, 'notes'),

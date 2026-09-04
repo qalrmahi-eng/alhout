@@ -47,6 +47,7 @@ export interface Contract {
   current_installment_remaining: number;
   next_due_date?: string;
   manual_reminder_date?: string;
+  manual_due_amount?: number;
   reminder_mode?: ReminderMode;
   status: ContractStatus;
   archived?: boolean | string;

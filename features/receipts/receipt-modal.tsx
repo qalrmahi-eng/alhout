@@ -141,11 +141,6 @@ export default function ReceiptModal({
             />
           </div>
           {snapshot.completed && <div className="completed-ribbon">تم إكمال العقد بالكامل</div>}
-          {snapshot.notes && (
-            <p className="mt-5 rounded-xl bg-slate-50 p-3 text-sm">
-              <strong>ملاحظة:</strong> {snapshot.notes}
-            </p>
-          )}
           <div className="receipt-signatures">
             <div><span>توقيع الدافع</span><i /></div>
             <div><span>توقيع المستلم</span><i /></div>
