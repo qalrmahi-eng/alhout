@@ -4,9 +4,9 @@ import { effectiveDueDate, expectedPaymentAmount } from '@/lib/due-date';
 
 export type ReminderCategory = 'after_7' | 'after_3' | 'tomorrow' | 'today' | 'overdue';
 
-export type ReminderItem = {
+export type ReminderItem<TContract extends Contract = Contract> = {
   customer: Customer;
-  contract: Contract;
+  contract: TContract;
   days: number;
   amount: number;
   category: ReminderCategory | null;
@@ -30,13 +30,13 @@ function categoryForDays(days: number): ReminderCategory | null {
   return null;
 }
 
-function buildOperationalReminders(
+function buildOperationalReminders<TContract extends Contract>(
   customers: Customer[],
-  contracts: Contract[],
+  contracts: TContract[],
   today: string,
-): ReminderItem[] {
+): ReminderItem<TContract>[] {
   const customersById = new Map(customers.map((customer) => [customer.id, customer]));
-  const reminders: ReminderItem[] = [];
+  const reminders: ReminderItem<TContract>[] = [];
   for (const contract of contracts) {
     const dueDate = effectiveDueDate(contract);
     if (contract.archived || contract.status === 'مؤرشف' || contract.status === 'مكتمل' || !dueDate) continue;
@@ -49,8 +49,20 @@ function buildOperationalReminders(
   return reminders.sort((a, b) => a.days - b.days || a.customer.name.localeCompare(b.customer.name, 'ar'));
 }
 
-export function buildReminders(customers: Customer[], contracts: Contract[], today: string): ReminderItem[] {
+export function buildReminders<TContract extends Contract>(customers: Customer[], contracts: TContract[], today: string): ReminderItem<TContract>[] {
   return buildOperationalReminders(customers, contracts, today).filter((reminder) => reminder.category !== null);
+}
+
+export function buildDashboardReminderGroups<TContract extends Contract>(
+  customers: Customer[], contracts: TContract[], today: string,
+) {
+  const all = buildReminders(customers, contracts, today);
+  return {
+    all,
+    today: all.filter((reminder) => reminder.category === 'today'),
+    overdue: all.filter((reminder) => reminder.category === 'overdue'),
+    upcoming: all.filter((reminder) => ['tomorrow', 'after_3', 'after_7'].includes(String(reminder.category))),
+  };
 }
 
 export function reminderBadgeCount(customers: Customer[], contracts: Contract[], today: string): number {

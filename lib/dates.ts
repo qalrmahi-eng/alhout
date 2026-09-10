@@ -64,7 +64,14 @@ function dateFromGoogleSerial(value: number): string {
 
 export function normalizeDateInput(value: unknown): string {
   if (value === null || value === undefined || value === '') return '';
-  if (typeof value === 'number') return dateFromGoogleSerial(value);
+  if (typeof value === 'number') {
+    const compact = Number.isInteger(value) ? String(value) : '';
+    if (/^\d{8}$/.test(compact)) {
+      const canonical = `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
+      return validDateOnly(canonical) ? canonical : '';
+    }
+    return dateFromGoogleSerial(value);
+  }
 
   if (Object.prototype.toString.call(value) === '[object Date]') {
     const date = value as Date;
@@ -76,6 +83,10 @@ export function normalizeDateInput(value: unknown): string {
   const text = String(value).trim();
   if (!text) return '';
   if (DATE_ONLY_PATTERN.test(text)) return validDateOnly(text) ? text : '';
+  if (/^\d{8}$/.test(text)) {
+    const canonical = `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`;
+    return validDateOnly(canonical) ? canonical : '';
+  }
 
   const display = DISPLAY_DATE_PATTERN.exec(text);
   if (display) {

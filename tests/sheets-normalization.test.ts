@@ -109,7 +109,7 @@ describe('تطبيع استجابات Google Sheets', () => {
         customer_id: 9,
         contract_id: 101,
         amount: 25_000,
-        payment_date: '20260727',
+        payment_date: '2026-07-27',
         notes: '',
         status: 'cancelled',
         cancellation_reason: '404',
@@ -164,7 +164,7 @@ describe('تطبيع استجابات Google Sheets', () => {
       settings: { id: 1, system_name: '2026', capital: 500_000 },
       customers: [{ id: 9, name: 'بدون اسم', phone: '7701234567' }],
       contracts: [{ id: 101, customer_id: 9, principal: 1_000_000, status: 'منتظم' }],
-      payments: [{ id: 4, customer_id: 9, contract_id: 101, amount: 25_000, payment_date: '20260727' }],
+      payments: [{ id: 4, customer_id: 9, contract_id: 101, amount: 25_000, payment_date: '2026-07-27' }],
       summary: { total_principal: 1_000_000, total_remaining: 1_075_000, customers_count: 1 },
     });
     expect(fetch).toHaveBeenCalledTimes(1);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildReminders, buildRemindersForDate, reminderBadgeCount } from '@/lib/reminders';
+import { buildDashboardReminderGroups, buildReminders, buildRemindersForDate, reminderBadgeCount } from '@/lib/reminders';
 import { addCalendarMonth, effectiveDueDate, expectedPaymentAmount } from '@/lib/due-date';
 import { reportPresetRange } from '@/lib/reports';
 import { buildWhatsAppMessage, buildWhatsAppUrl, normalizeIraqiPhone } from '@/lib/whatsapp';
@@ -103,12 +103,20 @@ describe('مركز التذكيرات', () => {
     manual.reminder_mode = 'manual';
     manual.manual_reminder_date = '2026-09-07';
     const rows = [...automatic, manual];
+    const dashboardInside = buildDashboardReminderGroups([customer], rows, '2026-09-04');
     expect(reminderBadgeCount([customer], rows, '2026-09-04')).toBe(3);
     expect(buildReminders([customer], rows, '2026-09-04')).toHaveLength(3);
+    expect(dashboardInside.all).toHaveLength(3);
+    expect(dashboardInside.today).toHaveLength(1);
+    expect(dashboardInside.upcoming).toHaveLength(2);
     manual.manual_reminder_date = '2026-09-08';
     expect(reminderBadgeCount([customer], rows, '2026-09-04')).toBe(2);
+    expect(buildReminders([customer], rows, '2026-09-04')).toHaveLength(2);
+    expect(buildDashboardReminderGroups([customer], rows, '2026-09-04').all).toHaveLength(2);
     manual.manual_reminder_date = '2026-09-07';
     expect(reminderBadgeCount([customer], rows, '2026-09-04')).toBe(3);
+    expect(buildReminders([customer], rows, '2026-09-04')).toHaveLength(3);
+    expect(buildDashboardReminderGroups([customer], rows, '2026-09-04').all).toHaveLength(3);
   });
 
   it('يضبط المبلغ اليدوي على كامل المتبقي ولا يتجاوزه', () => {

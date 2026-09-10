@@ -1059,10 +1059,21 @@ function validCalendarDate_(value) {
 }
 function normalizeDateInput_(value) {
   if (value === null || value === undefined || value === '') return '';
-  if (typeof value === 'number') return googleSerialDate_(value);
+  if (typeof value === 'number') {
+    var compactNumber = Number.isInteger(value) ? String(value) : '';
+    if (/^\d{8}$/.test(compactNumber)) {
+      var compactDate = compactNumber.slice(0, 4) + '-' + compactNumber.slice(4, 6) + '-' + compactNumber.slice(6, 8);
+      return validCalendarDate_(compactDate) ? compactDate : '';
+    }
+    return googleSerialDate_(value);
+  }
   if (Object.prototype.toString.call(value) === '[object Date]') return Utilities.formatDate(value, 'Asia/Baghdad', 'yyyy-MM-dd');
   var text = String(value).trim();
   if (validCalendarDate_(text)) return text;
+  if (/^\d{8}$/.test(text)) {
+    var compactTextDate = text.slice(0, 4) + '-' + text.slice(4, 6) + '-' + text.slice(6, 8);
+    return validCalendarDate_(compactTextDate) ? compactTextDate : '';
+  }
   var display = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(text);
   if (display) {
     var canonical = display[3] + '-' + display[2] + '-' + display[1];
