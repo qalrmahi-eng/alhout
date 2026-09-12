@@ -193,23 +193,28 @@ describe('سيناريو Phase 1 في Apps Script', () => {
       total_expected_profit: 1_300_000,
       customers_count: 1,
       active_contracts_count: 2,
+      overdue_contracts_count: 2,
     });
 
     expect(gas.archiveContract_({ contract_id: first.id })).toMatchObject({ id: first.id, status: 'مؤرشف', archived: true });
     expect(gas.getDashboard_().summary).toMatchObject({
       total_principal: 3_000_000,
       total_contract_value: 3_300_000,
+      total_received: 550_000,
       total_remaining: 2_750_000,
       total_expected_profit: 300_000,
       active_contracts_count: 1,
+      overdue_contracts_count: 1,
     });
     expect(gas.restoreContract_({ contract_id: first.id })).toMatchObject({ id: first.id, archived: false });
     expect(gas.getDashboard_().summary).toMatchObject({
       total_principal: 8_000_000,
       total_contract_value: 9_300_000,
+      total_received: 1_750_000,
       total_remaining: 7_550_000,
       total_expected_profit: 1_300_000,
       active_contracts_count: 2,
+      overdue_contracts_count: 2,
     });
     expect(() => gas.permanentlyDeleteContract_({ contract_id: first.id })).toThrow('دفعات نشطة');
 

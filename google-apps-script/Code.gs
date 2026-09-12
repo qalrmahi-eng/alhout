@@ -236,15 +236,20 @@ function dashboardSummary_(customers, contracts, payments) {
   var operationalContracts = contracts.filter(function (contract) {
     return !truthy_(contract.archived) && text_(contract.status) !== 'مؤرشف';
   });
+  var operationalContractIds = operationalContracts.reduce(function (index, contract) {
+    index[number_(contract.id, 0)] = true;
+    return index;
+  }, Object.create(null));
   var activePayments = payments.filter(function (payment) {
-    return (text_(payment.status) || 'active') === 'active';
+    return (text_(payment.status) || 'active') === 'active' &&
+      Boolean(operationalContractIds[number_(payment.contract_id, 0)]);
   });
   return {
     total_principal: operationalContracts.reduce(function (sum, contract) { return sum + integer_(contract.principal, 0); }, 0),
     total_contract_value: operationalContracts.reduce(function (sum, contract) { return sum + integer_(contract.contract_total, 0); }, 0),
     total_received: activePayments.reduce(function (sum, payment) { return sum + integer_(payment.amount, 0); }, 0),
-    total_remaining: contracts.filter(function (contract) {
-      return !truthy_(contract.archived) && text_(contract.status) !== 'مؤرشف' && text_(contract.status) !== 'مكتمل';
+    total_remaining: operationalContracts.filter(function (contract) {
+      return text_(contract.status) !== 'مكتمل';
     }).reduce(function (sum, contract) { return sum + integer_(contract.remaining_amount, 0); }, 0),
     total_expected_profit: operationalContracts.reduce(function (sum, contract) { return sum + integer_(contract.profit_amount, 0); }, 0),
     received_this_month: activePayments.filter(function (payment) {
