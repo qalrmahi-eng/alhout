@@ -42,6 +42,7 @@ describe('حدود الحماية', () => {
     expect(allowedActions).toContain("'delete_customer_permanently'");
     expect(allowedActions).toContain("'set_manual_reminder_date'");
     expect(allowedActions).toContain("'clear_manual_reminder_date'");
+    expect(allowedActions).toContain("'delete_contract_permanently'");
     expect(allowedActions).toContain("'update_payment'");
   });
 });

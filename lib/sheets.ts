@@ -295,6 +295,20 @@ export const archiveContract = (contractId: number) =>
   request('archive_contract', normalizeContract, { contract_id: contractId });
 export const restoreContract = (contractId: number) =>
   request('restore_contract', normalizeContract, { contract_id: contractId });
+export const deleteContractPermanently = (contractId: number) =>
+  request(
+    'delete_contract_permanently',
+    (value) => {
+      const record = asRecord(value);
+      return {
+        contract_id: number(record.contract_id),
+        customer_id: number(record.customer_id),
+        deleted_contracts: number(record.deleted_contracts),
+        deleted_payments: number(record.deleted_payments),
+      };
+    },
+    { contract_id: contractId },
+  );
 export const setManualReminderDate = (contractId: number, date: string, amount?: number) =>
   request('set_manual_reminder_date', normalizeContract, {
     contract_id: contractId,

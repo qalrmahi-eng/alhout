@@ -119,6 +119,20 @@ describe('مركز التذكيرات', () => {
     expect(buildDashboardReminderGroups([customer], rows, '2026-09-04').all).toHaveLength(3);
   });
 
+  it('يستبعد العقد المؤرشف أو المحذوف من التذكيرات دون التأثير في العقد الآخر', () => {
+    const archived = contract(21, '2026-09-04');
+    const other = contract(22, '2026-09-05');
+    const rows = [archived, other];
+    expect(buildReminders([customer], rows, '2026-09-04')).toHaveLength(2);
+    archived.archived = true;
+    archived.status = 'مؤرشف';
+    expect(buildReminders([customer], rows, '2026-09-04').map((item) => item.contract.id)).toEqual([other.id]);
+    archived.archived = false;
+    archived.status = 'منتظم';
+    expect(buildReminders([customer], rows, '2026-09-04')).toHaveLength(2);
+    expect(buildReminders([customer], rows.filter((row) => row.id !== archived.id), '2026-09-04').map((item) => item.contract.id)).toEqual([other.id]);
+  });
+
   it('يضبط المبلغ اليدوي على كامل المتبقي ولا يتجاوزه', () => {
     const row = contract(9, '2026-09-07');
     row.reminder_mode = 'manual';

@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Archive, ArrowRight, CalendarClock, MessageCircle, Pencil, Printer, RotateCcw, WalletCards } from 'lucide-react';
+import { Archive, ArrowRight, CalendarClock, MessageCircle, Pencil, Printer, RotateCcw, Trash2, WalletCards } from 'lucide-react';
 import { EmptyState, StatusBadge } from '@/components/business-ui';
 import { formatBaghdadDateTime } from '@/lib/dates';
 import { formatContractNumber, formatDate, formatIqd } from '@/lib/formatters';
@@ -20,6 +20,7 @@ type Props = {
   onCancel: (payment: Payment) => void;
   onEditPayment: (payment: Payment) => void;
   onArchive: () => void;
+  onDelete: () => void;
   onReminder: () => void;
   onWhatsAppError: (message: string) => void;
 };
@@ -45,6 +46,7 @@ export default function ContractDetails(props: Props) {
           <button className="secondary-button compact" onClick={props.onEdit} disabled={contract.status === 'مؤرشف'}><Pencil size={16} /> تعديل</button>
           <button className="secondary-button compact" onClick={props.onReminder}><CalendarClock size={16} /> {reminderMode(contract) === 'manual' ? 'تعديل موعد التذكير' : 'تحديد موعد التذكير'}</button>
           <button className="secondary-button compact" onClick={props.onArchive}>{contract.status === 'مؤرشف' ? <RotateCcw size={16} /> : <Archive size={16} />}{contract.status === 'مؤرشف' ? 'استرجاع' : 'أرشفة'}</button>
+          <button className="danger-button compact" onClick={props.onDelete}><Trash2 size={16} /> حذف العقد</button>
           <button className="primary-button compact" onClick={props.onPay} disabled={['مكتمل', 'مؤرشف'].includes(progress.status)}><WalletCards size={16} /> إضافة دفعة</button>
         </div>
       </div>

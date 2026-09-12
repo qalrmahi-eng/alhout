@@ -37,6 +37,7 @@ import { reminderBadgeCount } from '@/lib/reminders';
 import {
   archiveContract,
   cancelPayment,
+  deleteContractPermanently,
   deleteCustomerPermanently,
   getDashboard,
   restoreContract,
@@ -97,6 +98,7 @@ export default function DashboardApp({ username }: { username: string }) {
   const [cancelTarget, setCancelTarget] = useState<Payment | null>(null);
   const [editPaymentTarget, setEditPaymentTarget] = useState<Payment | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<ContractView | null>(null);
+  const [deleteContractTarget, setDeleteContractTarget] = useState<ContractView | null>(null);
   const [reminderTarget, setReminderTarget] = useState<ContractView | null>(null);
   const [deleteCustomerTarget, setDeleteCustomerTarget] = useState<Customer | null>(null);
   const [receipt, setReceipt] = useState<{ customer: Customer; contract: Contract; payment: Payment; summary: ContractSummary; autoPrint?: boolean } | null>(null);
@@ -222,6 +224,7 @@ export default function DashboardApp({ username }: { username: string }) {
           onCancel={setCancelTarget}
           onEditPayment={setEditPaymentTarget}
           onArchive={() => setArchiveTarget(selectedContract)}
+          onDelete={() => setDeleteContractTarget(selectedContract)}
           onReminder={() => setReminderTarget(selectedContract)}
           onWhatsAppError={(message) => notify(message, 'error')}
         /> : <>
@@ -243,7 +246,8 @@ export default function DashboardApp({ username }: { username: string }) {
     {editPaymentTarget && editPaymentContract && <EditPaymentDialog payment={editPaymentTarget} contract={editPaymentContract} onClose={() => setEditPaymentTarget(null)} onSaved={async (saved) => { setEditPaymentTarget(null); setPayments((current) => current.map((payment) => payment.id === saved.id ? saved : payment)); if (saved.contract_after) setContracts((current) => current.map((contract) => contract.id === saved.contract_id ? saved.contract_after! : contract)); notify('تم تعديل الدفعة وتحديث أرصدة العقد'); await load(true); }} />}
     {reminderTarget && <ManualReminderDialog contract={reminderTarget} onClose={() => setReminderTarget(null)} onSaved={async (saved) => { setReminderTarget(null); setContracts((current) => current.map((contract) => contract.id === saved.id ? saved : contract)); notify(saved.reminder_mode === 'manual' ? 'تم حفظ موعد التذكير اليدوي' : 'تمت العودة إلى موعد التذكير التلقائي'); await load(true); }} />}
     {cancelTarget && <CancelPaymentDialog payment={cancelTarget} onClose={() => setCancelTarget(null)} onDone={async () => { setCancelTarget(null); notify('أُلغيت الدفعة وأعيد حساب العقد'); await load(true); }} />}
-    {archiveTarget && <ConfirmDialog title={archiveTarget.status === 'مؤرشف' ? 'استرجاع العقد' : 'أرشفة العقد'} message={`سيبقى العقد ${archiveTarget.id} ودفعاته محفوظين بالكامل.`} confirmLabel={archiveTarget.status === 'مؤرشف' ? 'استرجاع' : 'أرشفة'} onClose={() => setArchiveTarget(null)} onConfirm={async () => { if (archiveTarget.status === 'مؤرشف') await restoreContract(archiveTarget.id); else await archiveContract(archiveTarget.id); setArchiveTarget(null); setSelectedContractId(null); notify('تم تحديث حالة العقد'); await load(true); }} />}
+    {archiveTarget && <ConfirmDialog title={archiveTarget.status === 'مؤرشف' ? 'استرجاع العقد' : 'أرشفة العقد'} message={`سيبقى العقد ${archiveTarget.id} ودفعاته محفوظين بالكامل.`} confirmLabel={archiveTarget.status === 'مؤرشف' ? 'استرجاع' : 'أرشفة'} onClose={() => setArchiveTarget(null)} onConfirm={async () => { const saved = archiveTarget.status === 'مؤرشف' ? await restoreContract(archiveTarget.id) : await archiveContract(archiveTarget.id); setContracts((current) => current.map((contract) => contract.id === saved.id ? saved : contract)); await load(true); setArchiveTarget(null); setSelectedContractId(null); notify('تم تحديث حالة العقد'); }} />}
+    {deleteContractTarget && <ConfirmDialog title="حذف العقد نهائياً" message="سيُحذف العقد نهائياً. إذا توجد دفعات نشطة، يجب إلغاؤها أولاً." confirmLabel="حذف العقد" onClose={() => setDeleteContractTarget(null)} onConfirm={async () => { const contractId = deleteContractTarget.id; const deleted = await deleteContractPermanently(contractId); setContracts((current) => current.filter((contract) => contract.id !== contractId)); setPayments((current) => current.filter((payment) => payment.contract_id !== contractId)); await load(true); setDeleteContractTarget(null); setSelectedContractId(null); setSelectedCustomerId(deleted.customer_id); setSection('customers'); notify('تم حذف العقد نهائياً'); }} />}
     {deleteCustomerTarget && <ConfirmDialog title="حذف العميل نهائياً" message="سيتم حذف العميل وجميع عقوده ودفعاته نهائياً. لا يمكن التراجع عن هذه العملية." confirmLabel="حذف نهائي" onClose={() => setDeleteCustomerTarget(null)} onConfirm={async () => { const customerId = deleteCustomerTarget.id; const contractIds = new Set(contracts.filter((contract) => contract.customer_id === customerId).map((contract) => contract.id)); const deleted = await deleteCustomerPermanently(customerId); setCustomers((current) => current.filter((customer) => customer.id !== customerId)); setContracts((current) => current.filter((contract) => contract.customer_id !== customerId)); setPayments((current) => current.filter((payment) => payment.customer_id !== customerId && !contractIds.has(payment.contract_id))); setDeleteCustomerTarget(null); setSelectedCustomerId(null); setSelectedContractId(null); notify(`حُذف العميل مع ${deleted.deleted_contracts} عقد و${deleted.deleted_payments} دفعة`); await load(true); }} />}
     {receipt && <ReceiptModal {...receipt} settings={settings} notify={notify} onClose={() => setReceipt(null)} />}
     {toast && <div className={`toast toast-${toast.type}`}>{toast.message}</div>}

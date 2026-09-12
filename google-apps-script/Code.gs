@@ -97,6 +97,7 @@ function dispatch_(action, data, trackingId) {
     update_contract: updateContract_,
     archive_contract: archiveContract_,
     restore_contract: restoreContract_,
+    delete_contract_permanently: permanentlyDeleteContract_,
     set_manual_reminder_date: setManualReminderDate_,
     clear_manual_reminder_date: clearManualReminderDate_,
     add_payment: addPayment_,
@@ -232,17 +233,20 @@ function getDashboard_() {
 
 function dashboardSummary_(customers, contracts, payments) {
   var month = today_().slice(0, 7);
+  var operationalContracts = contracts.filter(function (contract) {
+    return !truthy_(contract.archived) && text_(contract.status) !== 'مؤرشف';
+  });
   var activePayments = payments.filter(function (payment) {
     return (text_(payment.status) || 'active') === 'active';
   });
   return {
-    total_principal: contracts.reduce(function (sum, contract) { return sum + integer_(contract.principal, 0); }, 0),
-    total_contract_value: contracts.reduce(function (sum, contract) { return sum + integer_(contract.contract_total, 0); }, 0),
+    total_principal: operationalContracts.reduce(function (sum, contract) { return sum + integer_(contract.principal, 0); }, 0),
+    total_contract_value: operationalContracts.reduce(function (sum, contract) { return sum + integer_(contract.contract_total, 0); }, 0),
     total_received: activePayments.reduce(function (sum, payment) { return sum + integer_(payment.amount, 0); }, 0),
     total_remaining: contracts.filter(function (contract) {
       return !truthy_(contract.archived) && text_(contract.status) !== 'مؤرشف' && text_(contract.status) !== 'مكتمل';
     }).reduce(function (sum, contract) { return sum + integer_(contract.remaining_amount, 0); }, 0),
-    total_expected_profit: contracts.reduce(function (sum, contract) { return sum + integer_(contract.profit_amount, 0); }, 0),
+    total_expected_profit: operationalContracts.reduce(function (sum, contract) { return sum + integer_(contract.profit_amount, 0); }, 0),
     received_this_month: activePayments.filter(function (payment) {
       return dateText_(payment.payment_date).slice(0, 7) === month;
     }).reduce(function (sum, payment) { return sum + integer_(payment.amount, 0); }, 0),
@@ -536,6 +540,34 @@ function restoreContract_(data) {
   return setContractArchived_(positiveInteger_(data.contract_id || data.id, 'معرف العقد'), false);
 }
 
+function permanentlyDeleteContract_(data) {
+  var contractId = positiveInteger_(data.contract_id || data.id, 'معرف العقد');
+  var contractTable = readTable_('contracts');
+  var found = findById_(contractTable, contractId);
+  if (!found) throw new Error('العقد غير موجود');
+
+  var paymentTable = readTable_('payments');
+  var paymentRows = [];
+  var hasActivePayments = false;
+  paymentTable.rows.forEach(function (payment, index) {
+    if (number_(payment.contract_id, 0) !== contractId) return;
+    if ((text_(payment.status) || 'active') === 'active') hasActivePayments = true;
+    paymentRows.push(index + 2);
+  });
+  if (hasActivePayments) {
+    throw new Error('لا يمكن حذف العقد لوجود دفعات نشطة. ألغِ الدفعات أولاً');
+  }
+
+  deleteRowsDescending_(paymentTable.sheet, paymentRows);
+  contractTable.sheet.deleteRow(found.rowNumber);
+  return {
+    contract_id: contractId,
+    customer_id: positiveInteger_(found.object.customer_id, 'معرف العميل'),
+    deleted_contracts: 1,
+    deleted_payments: paymentRows.length
+  };
+}
+
 function setManualReminderDate_(data) {
   return changeManualReminderDate_(data, requireDate_(data.manual_reminder_date, 'موعد التذكير'), 'manual');
 }
@@ -569,6 +601,7 @@ function setContractArchived_(contractId, archived) {
   var found = findById_(table, contractId);
   if (!found) throw new Error('العقد غير موجود');
   found.object.archived = archived;
+  if (!archived && text_(found.object.status) === 'مؤرشف') found.object.status = '';
   found.object.updated_at = now_();
   var payments = indexPaymentsByContract_(listPayments_())[contractId] || [];
   var enriched = enrichContract_(found.object, payments);
@@ -1016,7 +1049,7 @@ function validSecret_(secret) {
 
 function safeMessage_(error) {
   var allowed = [
-    'مطلوب', 'غير موجود', 'غير صالح', 'أكبر من', 'مؤرشف', 'استرجع العميل',
+    'مطلوب', 'غير موجود', 'غير صالح', 'أكبر من', 'مؤرشف', 'استرجع العميل', 'دفعات نشطة',
     'شغّل upgradeSheets'
   ];
   var message = error && error.message ? String(error.message) : '';

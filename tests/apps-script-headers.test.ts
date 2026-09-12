@@ -24,6 +24,9 @@ type GasRuntime = {
   reportsSummary_: (data: Record<string, unknown>) => Record<string, number | string>;
   addContract_: (data: Record<string, unknown>) => Record<string, unknown>;
   updateContract_: (data: Record<string, unknown>) => Record<string, unknown>;
+  archiveContract_: (data: Record<string, unknown>) => Record<string, unknown>;
+  restoreContract_: (data: Record<string, unknown>) => Record<string, unknown>;
+  permanentlyDeleteContract_: (data: Record<string, unknown>) => Record<string, unknown>;
   addPayment_: (data: Record<string, unknown>) => Record<string, unknown>;
   cancelPayment_: (data: Record<string, unknown>) => Record<string, unknown>;
   updatePayment_: (data: Record<string, unknown>) => Record<string, unknown>;
@@ -191,6 +194,37 @@ describe('سيناريو Phase 1 في Apps Script', () => {
       customers_count: 1,
       active_contracts_count: 2,
     });
+
+    expect(gas.archiveContract_({ contract_id: first.id })).toMatchObject({ id: first.id, status: 'مؤرشف', archived: true });
+    expect(gas.getDashboard_().summary).toMatchObject({
+      total_principal: 3_000_000,
+      total_contract_value: 3_300_000,
+      total_remaining: 2_750_000,
+      total_expected_profit: 300_000,
+      active_contracts_count: 1,
+    });
+    expect(gas.restoreContract_({ contract_id: first.id })).toMatchObject({ id: first.id, archived: false });
+    expect(gas.getDashboard_().summary).toMatchObject({
+      total_principal: 8_000_000,
+      total_contract_value: 9_300_000,
+      total_remaining: 7_550_000,
+      total_expected_profit: 1_300_000,
+      active_contracts_count: 2,
+    });
+    expect(() => gas.permanentlyDeleteContract_({ contract_id: first.id })).toThrow('دفعات نشطة');
+
+    const mistaken = gas.addContract_({
+      customer_id: 15, principal: 200_000, profit_percent: 0, installments: 2,
+      delivery_date: '2026-03-01', first_due_date: '2026-03-31',
+    });
+    expect(gas.permanentlyDeleteContract_({ contract_id: mistaken.id })).toEqual({
+      contract_id: mistaken.id,
+      customer_id: 15,
+      deleted_contracts: 1,
+      deleted_payments: 0,
+    });
+    expect(gas.listContracts_().map((contract) => contract.id)).toEqual([first.id, second.id]);
+    expect(gas.listContracts_().find((contract) => contract.id === second.id)).toMatchObject({ remaining_amount: 2_750_000 });
 
     expect(gas.reportsSummary_({ from: '2026-01-01', to: '2026-01-31' })).toMatchObject({
       received_amount: 1_200_000,
