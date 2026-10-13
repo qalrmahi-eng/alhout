@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, FileText, LoaderCircle, Printer, RotateCcw } from 'lucide-react';
 import { Field, ModalHeader } from '@/components/business-ui';
 import { summarizeContract, validatePayment } from '@/lib/finance';
@@ -23,6 +23,7 @@ export default function PaymentDialog(props: Props) {
   const [sequence, setSequence] = useState(0);
   const [remaining, setRemaining] = useState(props.contract.remaining_amount);
   const [paidAfter, setPaidAfter] = useState(props.contract.paid_amount);
+  const requestIdRef = useRef<string | null>(null);
   const suggested = useMemo(() => {
     if (paidAfter === props.contract.paid_amount) return Math.min(props.contract.current_installment_remaining || props.contract.installment_value, remaining);
     const synthetic: Payment = { id: -1, customer_id: props.contract.customer_id, contract_id: props.contract.id, amount: paidAfter, payment_date: props.today, status: 'active' };
@@ -34,13 +35,14 @@ export default function PaymentDialog(props: Props) {
     const form = new FormData(event.currentTarget);
     try {
       const amount = validatePayment(Number(form.get('amount')), remaining);
+      requestIdRef.current ??= crypto.randomUUID();
       const payment = await addPayment({
         customer_id: props.contract.customer_id,
         contract_id: props.contract.id,
         amount,
         payment_date: form.get('payment_date'),
         notes: form.get('notes'),
-        request_id: crypto.randomUUID(),
+        request_id: requestIdRef.current,
       });
       setSaved(payment);
       setRemaining(payment.remaining_after ?? Math.max(remaining - payment.amount, 0));
@@ -62,7 +64,7 @@ export default function PaymentDialog(props: Props) {
     <div className="modal-actions flex-wrap">
       <button className="secondary-button" onClick={() => props.onReceipt(saved, false)}><FileText size={17} /> عرض الوصل</button>
       <button className="secondary-button" onClick={() => props.onReceipt(saved, true)}><Printer size={17} /> طباعة / PDF</button>
-      {remaining > 0 && <button className="secondary-button" onClick={() => { setSaved(null); setSequence((value) => value + 1); }}><RotateCcw size={17} /> دفعة أخرى</button>}
+      {remaining > 0 && <button className="secondary-button" onClick={() => { requestIdRef.current = null; setSaved(null); setSequence((value) => value + 1); }}><RotateCcw size={17} /> دفعة أخرى</button>}
       <button className="primary-button" onClick={props.onClose}>إغلاق</button>
     </div>
   </div></div>;

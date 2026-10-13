@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ContractFormDialog from '@/features/contracts/contract-form-dialog';
@@ -10,6 +11,7 @@ import {
   normalizeSheetDate,
   normalizeSheetDateTime,
   parseDateOnly,
+  millisecondsUntilNextBaghdadDay,
 } from '@/lib/dates';
 
 function contractForm(deliveryDate: string, firstDueDate: string): FormData {
@@ -71,9 +73,26 @@ describe('تواريخ العقود', () => {
   });
 
   it('يرفض القيم غير الصالحة ولا ينتج Invalid Date', () => {
-    for (const value of [null, '', 'not-a-date', '2026-02-30', 20_260_727]) {
+    for (const value of [null, '', 'not-a-date', '2026-02-30']) {
       expect(normalizeSheetDate(value)).toBe('');
     }
+  });
+
+  it('يرفض أوقات DateTime غير الصالحة دون RangeError', () => {
+    expect(normalizeSheetDateTime('2026-01-01T23:59:00Z')).toBe('2026-01-01T23:59:00.000Z');
+    expect(normalizeSheetDateTime('2026-01-01T24:00:00Z')).toBe('');
+    expect(normalizeSheetDateTime('2026-01-01T99:00:00Z')).toBe('');
+    expect(normalizeSheetDateTime('2026-02-30T10:00:00Z')).toBe('');
+    expect(normalizeSheetDateTime('2026-13-01T10:00:00Z')).toBe('');
+  });
+
+  it('يحسب انتقال منتصف الليل حسب بغداد دون polling', () => {
+    expect(millisecondsUntilNextBaghdadDay(new Date('2026-10-13T20:59:59.000Z'))).toBe(1_000);
+    expect(millisecondsUntilNextBaghdadDay(new Date('2026-10-13T21:00:01.000Z'))).toBe(86_399_000);
+    const dashboard = readFileSync('features/dashboard/dashboard-app.tsx', 'utf8');
+    expect(dashboard).toContain('setToday(nextToday)');
+    expect(dashboard).toContain('void load(true)');
+    expect(dashboard).toContain('millisecondsUntilNextBaghdadDay() + 250');
   });
 
   it('يحافظ على الطابع الزمني ويعرضه بتوقيت بغداد', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDashboardReminderGroups, buildReminders, buildRemindersForDate, reminderBadgeCount } from '@/lib/reminders';
+import { buildDashboardReminderGroups, buildDismissedReminders, buildReminders, buildRemindersForDate, reminderBadgeCount } from '@/lib/reminders';
 import { addCalendarMonth, effectiveDueDate, expectedPaymentAmount } from '@/lib/due-date';
 import { reportPresetRange } from '@/lib/reports';
 import { buildWhatsAppMessage, buildWhatsAppUrl, normalizeIraqiPhone } from '@/lib/whatsapp';
@@ -44,8 +44,14 @@ describe('WhatsApp العراقي', () => {
 
   it('لا يقترح للزبون مبلغاً أكبر من المتبقي', () => {
     const row = contract(2, '2026-09-11');
+    row.installment_value = 390_000;
+    row.current_installment_paid = 300_000;
+    row.current_installment_remaining = 90_000;
+    row.remaining_amount = 1_000_000;
+    expect(expectedPaymentAmount(row)).toBe(90_000);
     row.remaining_amount = 80_000;
-    row.current_installment_remaining = 10_000;
+    expect(expectedPaymentAmount(row)).toBe(80_000);
+    row.reminder_mode = 'manual';
     expect(expectedPaymentAmount(row)).toBe(80_000);
   });
 
@@ -65,16 +71,18 @@ describe('WhatsApp العراقي', () => {
 });
 
 describe('مركز التذكيرات', () => {
-  it('يصنف 7 و3 و1 و0 والمتأخر حسب next_due_date الحالي', () => {
+  it('يعرض غداً واليوم والمتأخر فقط تلقائياً', () => {
     const dates = ['2026-09-11', '2026-09-07', '2026-09-05', '2026-09-04', '2026-08-31'];
     const rows = buildReminders([customer], dates.map((date, index) => contract(index + 1, date)), '2026-09-04');
     expect(rows.map((row) => [row.contract.id, row.category])).toEqual([
-      [5, 'overdue'], [4, 'today'], [3, 'tomorrow'], [2, 'after_3'], [1, 'after_7'],
+      [5, 'overdue'], [4, 'today'], [3, 'tomorrow'],
     ]);
+    expect(buildRemindersForDate([customer], [contract(6, '2026-09-07')], '2026-09-04', '2026-09-07')).toHaveLength(1);
+    expect(buildRemindersForDate([customer], [contract(7, '2026-09-11')], '2026-09-04', '2026-09-11')).toHaveLength(1);
   });
 
   it('لا يبقي تذكير القسط القديم بعد انتقال الاستحقاق بدفعة مقدمة', () => {
-    const before = buildReminders([customer], [contract(1, '2026-09-11')], '2026-09-04');
+    const before = buildReminders([customer], [contract(1, '2026-09-05')], '2026-09-04');
     const after = buildReminders([customer], [contract(1, '2026-10-11')], '2026-09-04');
     expect(before).toHaveLength(1);
     expect(after).toHaveLength(0);
@@ -82,26 +90,26 @@ describe('مركز التذكيرات', () => {
 
   it('يستخدم الموعد اليدوي والفلترة حسب التاريخ ثم يعود للتلقائي عند مسحه', () => {
     const row = contract(8, '2026-10-11');
-    row.manual_reminder_date = '2026-09-07';
+    row.manual_reminder_date = '2026-09-05';
     row.reminder_mode = 'automatic';
     expect(effectiveDueDate(row)).toBe('2026-10-11');
     row.reminder_mode = 'manual';
     row.manual_due_amount = 275_000;
-    expect(effectiveDueDate(row)).toBe('2026-09-07');
+    expect(effectiveDueDate(row)).toBe('2026-09-05');
     expect(expectedPaymentAmount(row)).toBe(275_000);
-    expect(buildReminders([customer], [row], '2026-09-04')[0]).toMatchObject({ category: 'after_3', dueDate: '2026-09-07' });
-    expect(buildRemindersForDate([customer], [row], '2026-09-04', '2026-09-07')).toHaveLength(1);
-    expect(buildWhatsAppMessage(customer, row, '2026-09-04')).toContain('07/09/2026');
+    expect(buildReminders([customer], [row], '2026-09-04')[0]).toMatchObject({ category: 'tomorrow', dueDate: '2026-09-05' });
+    expect(buildRemindersForDate([customer], [row], '2026-09-04', '2026-09-05')).toHaveLength(1);
+    expect(buildWhatsAppMessage(customer, row, '2026-09-04')).toContain('05/09/2026');
     row.reminder_mode = 'automatic';
     expect(effectiveDueDate(row)).toBe('2026-10-11');
-    expect(buildRemindersForDate([customer], [row], '2026-09-04', '2026-09-07')).toHaveLength(0);
+    expect(buildRemindersForDate([customer], [row], '2026-09-04', '2026-09-05')).toHaveLength(0);
   });
 
   it('يستخدم Badge ومركز التذكير نفس البيانات عند نقل الموعد اليدوي', () => {
     const automatic = [contract(1, '2026-09-04'), contract(2, '2026-09-05')];
     const manual = contract(3, '2026-10-01');
     manual.reminder_mode = 'manual';
-    manual.manual_reminder_date = '2026-09-07';
+    manual.manual_reminder_date = '2026-09-05';
     const rows = [...automatic, manual];
     const dashboardInside = buildDashboardReminderGroups([customer], rows, '2026-09-04');
     expect(reminderBadgeCount([customer], rows, '2026-09-04')).toBe(3);
@@ -113,10 +121,20 @@ describe('مركز التذكيرات', () => {
     expect(reminderBadgeCount([customer], rows, '2026-09-04')).toBe(2);
     expect(buildReminders([customer], rows, '2026-09-04')).toHaveLength(2);
     expect(buildDashboardReminderGroups([customer], rows, '2026-09-04').all).toHaveLength(2);
-    manual.manual_reminder_date = '2026-09-07';
+    manual.manual_reminder_date = '2026-09-05';
     expect(reminderBadgeCount([customer], rows, '2026-09-04')).toBe(3);
     expect(buildReminders([customer], rows, '2026-09-04')).toHaveLength(3);
     expect(buildDashboardReminderGroups([customer], rows, '2026-09-04').all).toHaveLength(3);
+  });
+
+  it('يخفي نفس موعد التذكير فقط ويظهر الموعد الجديد', () => {
+    const row = contract(12, '2026-09-04');
+    row.dismissed_reminder_date = '2026-09-04';
+    expect(buildReminders([customer], [row, row], '2026-09-04')).toHaveLength(0);
+    expect(reminderBadgeCount([customer], [row], '2026-09-04')).toBe(0);
+    expect(buildDismissedReminders([customer], [row], '2026-09-04')).toHaveLength(1);
+    row.next_due_date = '2026-09-05';
+    expect(buildReminders([customer], [row, row], '2026-09-04')).toHaveLength(1);
   });
 
   it('يستبعد العقد المؤرشف أو المحذوف من التذكيرات دون التأثير في العقد الآخر', () => {
@@ -130,7 +148,30 @@ describe('مركز التذكيرات', () => {
     archived.archived = false;
     archived.status = 'منتظم';
     expect(buildReminders([customer], rows, '2026-09-04')).toHaveLength(2);
+    other.status = 'مكتمل';
+    expect(buildReminders([customer], rows, '2026-09-04').map((item) => item.contract.id)).toEqual([archived.id]);
+    other.status = 'منتظم';
     expect(buildReminders([customer], rows.filter((row) => row.id !== archived.id), '2026-09-04').map((item) => item.contract.id)).toEqual([other.id]);
+  });
+
+  it('يستبعد العميل المؤرشف من التذكيرات ويعيده Restore دون التأثير في عميل آخر', () => {
+    const archivedCustomer = { ...customer, archived: true };
+    const otherCustomer: Customer = { id: 2, name: 'سارة', phone: '07700000002' };
+    const archivedCustomerContract = contract(31, '2026-09-04');
+    const otherContract = { ...contract(32, '2026-09-05'), customer_id: otherCustomer.id };
+
+    expect(buildReminders(
+      [archivedCustomer, otherCustomer],
+      [archivedCustomerContract, otherContract],
+      '2026-09-04',
+    ).map((item) => item.contract.id)).toEqual([otherContract.id]);
+
+    archivedCustomer.archived = false;
+    expect(buildReminders(
+      [archivedCustomer, otherCustomer],
+      [archivedCustomerContract, otherContract],
+      '2026-09-04',
+    ).map((item) => item.contract.id)).toEqual([archivedCustomerContract.id, otherContract.id]);
   });
 
   it('يضبط المبلغ اليدوي على كامل المتبقي ولا يتجاوزه', () => {
@@ -148,6 +189,21 @@ describe('مركز التذكيرات', () => {
     expect(addCalendarMonth('2024-01-31')).toBe('2024-02-29');
     expect(addCalendarMonth('2026-03-31')).toBe('2026-04-30');
     expect(addCalendarMonth('2026-12-15')).toBe('2027-01-15');
+  });
+
+  it('يحافظ على مرساة اليوم عبر فبراير عند الترحيل المتكرر', () => {
+    const cases = [
+      ['2026-01-31', 31, '2026-02-28', '2026-03-31'],
+      ['2026-01-30', 30, '2026-02-28', '2026-03-30'],
+      ['2026-01-29', 29, '2026-02-28', '2026-03-29'],
+      ['2026-01-28', 28, '2026-02-28', '2026-03-28'],
+      ['2024-01-31', 31, '2024-02-29', '2024-03-31'],
+    ] as const;
+    for (const [start, anchor, february, march] of cases) {
+      const firstAdvance = addCalendarMonth(start, anchor);
+      expect(firstAdvance).toBe(february);
+      expect(addCalendarMonth(firstAdvance, anchor)).toBe(march);
+    }
   });
 });
 

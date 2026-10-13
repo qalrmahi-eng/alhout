@@ -25,7 +25,7 @@ var SHEETS = {
       'paid_amount', 'remaining_amount', 'current_installment_paid',
       'current_installment_remaining', 'next_due_date', 'status', 'archived',
       'created_at', 'updated_at', 'manual_reminder_date', 'reminder_mode',
-      'manual_due_amount'
+      'manual_due_amount', 'dismissed_reminder_date', 'manual_reminder_anchor_day'
     ]
   },
   payments: {
@@ -83,7 +83,9 @@ function dispatch_(action, data, trackingId) {
     customers: listCustomers_,
     contracts: listContracts_,
     payments: listPayments_,
-    reports_summary: function () { return reportsSummary_(data); }
+    reports_summary: function () { return reportsSummary_(data); },
+    integrity_audit: integrityAudit_,
+    financial_reconciliation: financialReconciliation_
   };
   if (reads[action]) return json_({ ok: true, data: reads[action](), status: 200 });
 
@@ -100,6 +102,8 @@ function dispatch_(action, data, trackingId) {
     delete_contract_permanently: permanentlyDeleteContract_,
     set_manual_reminder_date: setManualReminderDate_,
     clear_manual_reminder_date: clearManualReminderDate_,
+    dismiss_reminder: dismissReminder_,
+    restore_reminder: restoreReminder_,
     add_payment: addPayment_,
     update_payment: updatePayment_,
     cancel_payment: cancelPayment_,
@@ -233,8 +237,13 @@ function getDashboard_() {
 
 function dashboardSummary_(customers, contracts, payments) {
   var month = today_().slice(0, 7);
+  var operationalCustomerIds = customers.reduce(function (index, customer) {
+    if (!truthy_(customer.archived)) index[number_(customer.id, 0)] = true;
+    return index;
+  }, Object.create(null));
   var operationalContracts = contracts.filter(function (contract) {
-    return !truthy_(contract.archived) && text_(contract.status) !== 'مؤرشف';
+    return Boolean(operationalCustomerIds[number_(contract.customer_id, 0)]) &&
+      !truthy_(contract.archived) && text_(contract.status) !== 'مؤرشف';
   });
   var operationalContractIds = operationalContracts.reduce(function (index, contract) {
     index[number_(contract.id, 0)] = true;
@@ -255,12 +264,12 @@ function dashboardSummary_(customers, contracts, payments) {
     received_this_month: activePayments.filter(function (payment) {
       return dateText_(payment.payment_date).slice(0, 7) === month;
     }).reduce(function (sum, payment) { return sum + integer_(payment.amount, 0); }, 0),
-    customers_count: customers.filter(function (customer) { return !truthy_(customer.archived); }).length,
-    active_contracts_count: contracts.filter(function (contract) {
-      return text_(contract.status) !== 'مكتمل' && text_(contract.status) !== 'مؤرشف';
+    customers_count: Object.keys(operationalCustomerIds).length,
+    active_contracts_count: operationalContracts.filter(function (contract) {
+      return text_(contract.status) !== 'مكتمل';
     }).length,
-    completed_contracts_count: contracts.filter(function (contract) { return text_(contract.status) === 'مكتمل'; }).length,
-    overdue_contracts_count: contracts.filter(function (contract) { return text_(contract.status) === 'متأخر'; }).length
+    completed_contracts_count: operationalContracts.filter(function (contract) { return text_(contract.status) === 'مكتمل'; }).length,
+    overdue_contracts_count: operationalContracts.filter(function (contract) { return text_(contract.status) === 'متأخر'; }).length
   };
 }
 
@@ -303,6 +312,296 @@ function reportsSummary_(data) {
     new_contracts_profit: newContracts.reduce(function (sum, contract) { return sum + integer_(contract.profit_amount, 0); }, 0),
     completed_contracts_count: completed.length
   };
+}
+
+function financialReconciliation_() {
+  var contractTable = readTable_('contracts');
+  var paymentTable = readTable_('payments');
+  return {
+    generated_at: now_(),
+    dry_run: true,
+    contracts: buildFinancialReconciliation_(contractTable.rows, paymentTable.rows)
+  };
+}
+
+function buildFinancialReconciliation_(contracts, payments) {
+  var paymentsByContract = indexPaymentsByContract_(payments);
+  return contracts.filter(function (contract) { return text_(contract.id) !== ''; }).map(function (contract, contractIndex) {
+    var contractId = number_(contract.id, 0);
+    var contractPayments = paymentsByContract[contractId] || [];
+    var activePayments = contractPayments.filter(function (payment) {
+      return (text_(payment.status) || 'active') === 'active';
+    });
+    var validActivePayments = activePayments.filter(function (payment) {
+      return Number.isSafeInteger(number_(payment.amount, NaN)) && number_(payment.amount, 0) > 0;
+    }).slice().sort(comparePayments_);
+    var invalidPaymentIds = activePayments.filter(function (payment) {
+      return !Number.isSafeInteger(number_(payment.amount, NaN)) || number_(payment.amount, 0) <= 0;
+    }).map(function (payment) { return number_(payment.id, 0) || text_(payment.id); });
+    var principal = number_(contract.principal, NaN);
+    var profitPercent = number_(contract.profit_percent, NaN);
+    var installments = number_(contract.installments, NaN);
+    var error = '';
+    var definition = null;
+    if (!Number.isSafeInteger(principal) || principal <= 0 || !isFinite(profitPercent) || profitPercent < 0 ||
+      !Number.isSafeInteger(installments) || installments <= 0 || installments > 10000) {
+      error = 'بيانات العقد المالية غير صالحة للحساب الآمن';
+    } else {
+      try { definition = contract_(principal, profitPercent, installments); }
+      catch (calculationError) { error = safeMessage_(calculationError); }
+    }
+
+    var calculatedPaid = validActivePayments.reduce(function (sum, payment) {
+      return sum + number_(payment.amount, 0);
+    }, 0);
+    var cancelledPaid = contractPayments.filter(function (payment) {
+      return text_(payment.status) === 'cancelled' && Number.isSafeInteger(number_(payment.amount, NaN)) && number_(payment.amount, 0) > 0;
+    }).reduce(function (sum, payment) { return sum + number_(payment.amount, 0); }, 0);
+    var calculatedRemaining = definition ? definition.total - calculatedPaid : null;
+    var snapshotErrors = [];
+    var runningPaid = 0;
+    if (definition) {
+      validActivePayments.forEach(function (payment) {
+        runningPaid += number_(payment.amount, 0);
+        var expectedRemaining = definition.total - runningPaid;
+        var storedPaidAfter = number_(payment.paid_after, NaN);
+        var storedRemainingAfter = number_(payment.remaining_after, NaN);
+        if (storedPaidAfter !== runningPaid || storedRemainingAfter !== expectedRemaining) {
+          snapshotErrors.push({
+            payment_id: number_(payment.id, 0) || text_(payment.id),
+            stored_paid_after: isFinite(storedPaidAfter) ? storedPaidAfter : null,
+            calculated_paid_after: runningPaid,
+            stored_remaining_after: isFinite(storedRemainingAfter) ? storedRemainingAfter : null,
+            calculated_remaining_after: expectedRemaining
+          });
+        }
+      });
+    }
+
+    var calculatedStatus = '';
+    if (definition && !invalidPaymentIds.length && calculatedPaid <= definition.total) {
+      try {
+        calculatedStatus = enrichContract_(Object.assign({}, contract), validActivePayments).status;
+      } catch (statusError) {
+        error = error || safeMessage_(statusError);
+      }
+    }
+    var storedStatus = text_(contract.status);
+    return {
+      contract_id: contractId || text_(contract.id),
+      row_number: contractIndex + 2,
+      stored_profit: finiteOrNull_(contract.profit_amount),
+      calculated_profit: definition ? definition.profit : null,
+      stored_total: finiteOrNull_(contract.contract_total),
+      calculated_total: definition ? definition.total : null,
+      stored_paid: finiteOrNull_(contract.paid_amount),
+      calculated_paid: calculatedPaid,
+      cancelled_paid: cancelledPaid,
+      stored_remaining: finiteOrNull_(contract.remaining_amount),
+      calculated_remaining: calculatedRemaining,
+      snapshot_errors: snapshotErrors,
+      invalid_payment_ids: invalidPaymentIds,
+      status_error: calculatedStatus && storedStatus !== calculatedStatus
+        ? { stored: storedStatus, calculated: calculatedStatus }
+        : null,
+      error: error || null,
+      ok: !error && !invalidPaymentIds.length && !snapshotErrors.length &&
+        finiteOrNull_(contract.profit_amount) === (definition ? definition.profit : null) &&
+        finiteOrNull_(contract.contract_total) === (definition ? definition.total : null) &&
+        finiteOrNull_(contract.paid_amount) === calculatedPaid &&
+        finiteOrNull_(contract.remaining_amount) === calculatedRemaining &&
+        (!calculatedStatus || storedStatus === calculatedStatus)
+    };
+  });
+}
+
+function integrityAudit_() {
+  var customerTable = readTable_('customers');
+  var contractTable = readTable_('contracts');
+  var paymentTable = readTable_('payments');
+  var report = {
+    generated_at: now_(),
+    dry_run: true,
+    CRITICAL: [],
+    WARNING: [],
+    INFO: []
+  };
+  var customerIds = auditIdColumn_(customerTable.rows, 'customer', 'customer_id', report);
+  var contractIds = auditIdColumn_(contractTable.rows, 'contract', 'contract_id', report);
+  auditIdColumn_(paymentTable.rows, 'payment', 'payment_id', report);
+  auditUniqueText_(paymentTable.rows, 'request_id', 'duplicate_request_id', report);
+  auditUniqueText_(paymentTable.rows, 'receipt_number', 'duplicate_receipt_number', report);
+
+  contractTable.rows.forEach(function (contract, index) {
+    var contractId = number_(contract.id, 0) || text_(contract.id) || 'row:' + (index + 2);
+    var customerId = positiveIdKey_(contract.customer_id);
+    if (!customerId || !customerIds[customerId]) {
+      addIntegrityIssue_(report, 'CRITICAL', 'orphan_contract', 'contract', [contractId], 'العقد مرتبط بعميل غير موجود', { customer_id: contract.customer_id });
+    }
+    ['delivery_date', 'first_due_date', 'expected_end_date'].forEach(function (field) {
+      if (!dateText_(contract[field])) {
+        addIntegrityIssue_(report, 'CRITICAL', 'invalid_contract_date', 'contract', [contractId], 'تاريخ عقد مفقود أو غير صالح', { field: field, value: contract[field] });
+      }
+    });
+    var archived = truthy_(contract.archived);
+    var archivedStatus = text_(contract.status) === 'مؤرشف';
+    if (archived !== archivedStatus) {
+      addIntegrityIssue_(report, 'WARNING', 'archived_status_mismatch', 'contract', [contractId], 'حقل الأرشفة لا يطابق حالة العقد');
+    }
+    var mode = text_(contract.reminder_mode).toLowerCase();
+    var manualDate = dateText_(contract.manual_reminder_date);
+    if (mode === 'manual' && !manualDate) {
+      addIntegrityIssue_(report, 'CRITICAL', 'invalid_manual_reminder_date', 'contract', [contractId], 'العقد اليدوي لا يحتوي موعد تذكير صالح');
+    }
+    var anchorDay = number_(contract.manual_reminder_anchor_day, NaN);
+    if (mode === 'manual' && text_(contract.manual_reminder_anchor_day) &&
+      (!Number.isInteger(anchorDay) || anchorDay < 1 || anchorDay > 31)) {
+      addIntegrityIssue_(report, 'WARNING', 'invalid_manual_reminder_anchor', 'contract', [contractId], 'مرساة يوم التذكير اليدوي غير صالحة');
+    }
+    var dismissed = text_(contract.dismissed_reminder_date);
+    var effectiveDue = mode === 'manual' ? manualDate : dateText_(contract.next_due_date);
+    if (dismissed && !dateText_(dismissed)) {
+      addIntegrityIssue_(report, 'WARNING', 'invalid_dismissed_reminder', 'contract', [contractId], 'تاريخ إخفاء التذكير غير صالح');
+    } else if (dismissed && dismissed !== effectiveDue) {
+      addIntegrityIssue_(report, 'INFO', 'stale_dismissed_reminder', 'contract', [contractId], 'التذكير المخفي يعود لموعد سابق ولا يخفي الموعد الحالي');
+    }
+    if ((archived || text_(contract.status) === 'مكتمل') && mode === 'manual' && manualDate) {
+      addIntegrityIssue_(report, 'WARNING', 'suppressed_operational_reminder', 'contract', [contractId], 'عقد غير تشغيلي ما زال يحتفظ بإعداد تذكير يدوي؛ النظام يستبعده تشغيلياً');
+    }
+  });
+
+  paymentTable.rows.forEach(function (payment, index) {
+    var paymentId = number_(payment.id, 0) || text_(payment.id) || 'row:' + (index + 2);
+    var contractKey = positiveIdKey_(payment.contract_id);
+    var contractRows = contractKey ? contractIds[contractKey] : null;
+    if (!contractRows) {
+      addIntegrityIssue_(report, 'CRITICAL', 'orphan_payment', 'payment', [paymentId], 'الدفعة مرتبطة بعقد غير موجود', { contract_id: payment.contract_id });
+    } else {
+      var contract = contractTable.rows[contractRows[0] - 2];
+      if (positiveIdKey_(payment.customer_id) !== positiveIdKey_(contract.customer_id)) {
+        addIntegrityIssue_(report, 'CRITICAL', 'payment_customer_mismatch', 'payment', [paymentId], 'معرف عميل الدفعة لا يطابق عميل العقد', { contract_id: payment.contract_id });
+      }
+    }
+    var amount = number_(payment.amount, NaN);
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      addIntegrityIssue_(report, 'CRITICAL', 'invalid_payment_amount', 'payment', [paymentId], 'مبلغ الدفعة غير صالح', { amount: payment.amount });
+    }
+    if (!dateText_(payment.payment_date)) {
+      addIntegrityIssue_(report, 'CRITICAL', 'invalid_payment_date', 'payment', [paymentId], 'تاريخ الدفعة غير صالح', { value: payment.payment_date });
+    }
+    if (!text_(payment.request_id)) {
+      addIntegrityIssue_(report, 'WARNING', 'missing_request_id', 'payment', [paymentId], 'الدفعة لا تحتوي request_id');
+    }
+    var receipt = text_(payment.receipt_number);
+    var receiptMatch = /^R-(\d{8})-(\d{4,})$/.exec(receipt);
+    if (!receiptMatch || !dateText_(receiptMatch[1].slice(0, 4) + '-' + receiptMatch[1].slice(4, 6) + '-' + receiptMatch[1].slice(6, 8))) {
+      addIntegrityIssue_(report, 'WARNING', 'malformed_receipt_number', 'payment', [paymentId], 'رقم الوصل مفقود أو لا يطابق التنسيق المعتمد', { receipt_number: receipt });
+    }
+  });
+
+  var reconciliation = buildFinancialReconciliation_(contractTable.rows, paymentTable.rows);
+  reconciliation.forEach(function (row) {
+    var id = row.contract_id;
+    if (row.error || row.invalid_payment_ids.length) {
+      addIntegrityIssue_(report, 'CRITICAL', 'invalid_financial_invariant', 'contract', [id], row.error || 'دفعات نشطة غير صالحة', { invalid_payment_ids: row.invalid_payment_ids });
+      return;
+    }
+    if (row.stored_profit !== row.calculated_profit || row.stored_total !== row.calculated_total) {
+      addIntegrityIssue_(report, 'CRITICAL', 'contract_total_mismatch', 'contract', [id], 'الربح أو إجمالي العقد المخزن لا يطابق الحساب', row);
+    }
+    if (row.calculated_paid > row.calculated_total || row.stored_paid > row.stored_total || row.stored_remaining < 0) {
+      addIntegrityIssue_(report, 'CRITICAL', 'impossible_contract_balance', 'contract', [id], 'رصيد العقد يتجاوز الحدود المالية الصحيحة', row);
+    }
+    if (row.stored_paid !== row.calculated_paid || row.stored_remaining !== row.calculated_remaining) {
+      addIntegrityIssue_(report, 'CRITICAL', 'stored_balance_mismatch', 'contract', [id], 'الرصيد المخزن لا يطابق الدفعات النشطة', row);
+      if (row.cancelled_paid && row.stored_paid === row.calculated_paid + row.cancelled_paid) {
+        addIntegrityIssue_(report, 'CRITICAL', 'cancelled_payment_in_totals', 'contract', [id], 'دفعة ملغاة ما زالت داخلة في الإجمالي المخزن');
+      }
+    }
+    if (row.snapshot_errors.length) {
+      addIntegrityIssue_(report, 'WARNING', 'payment_snapshot_mismatch', 'contract', [id], 'لقطات paid_after/remaining_after غير صحيحة', { snapshot_errors: row.snapshot_errors });
+    }
+    if (row.status_error) {
+      addIntegrityIssue_(report, 'WARNING', 'contract_status_mismatch', 'contract', [id], 'حالة العقد المخزنة لا تطابق الحالة المحسوبة', row.status_error);
+    }
+    if (text_(row.status_error && row.status_error.stored) === 'مكتمل' && row.calculated_remaining > 0) {
+      addIntegrityIssue_(report, 'CRITICAL', 'completed_with_remaining', 'contract', [id], 'العقد مكتمل مع وجود مبلغ متبقٍ');
+    }
+    if (text_(row.status_error && row.status_error.stored) && text_(row.status_error.stored) !== 'مكتمل' && row.calculated_remaining === 0) {
+      addIntegrityIssue_(report, 'CRITICAL', 'active_with_zero_remaining', 'contract', [id], 'العقد نشط رغم اكتمال الرصيد');
+    }
+  });
+
+  report.INFO.push({
+    code: 'audit_summary',
+    entity: 'system',
+    ids: [],
+    message: 'تم تنفيذ تدقيق قراءة فقط دون تعديل أي صف',
+    details: {
+      customers: customerTable.rows.length,
+      contracts: contractTable.rows.length,
+      payments: paymentTable.rows.length,
+      reconciliation_errors: reconciliation.filter(function (row) { return !row.ok; }).length
+    }
+  });
+  report.summary = {
+    critical: report.CRITICAL.length,
+    warning: report.WARNING.length,
+    info: report.INFO.length
+  };
+  report.reconciliation = reconciliation;
+  return report;
+}
+
+function auditIdColumn_(rows, entity, codePrefix, report) {
+  var index = Object.create(null);
+  rows.forEach(function (row, rowIndex) {
+    var key = positiveIdKey_(row.id);
+    if (!key) {
+      addIntegrityIssue_(report, 'CRITICAL', 'missing_' + codePrefix, entity, ['row:' + (rowIndex + 2)], 'المعرف مفقود أو غير صالح');
+      return;
+    }
+    if (!index[key]) index[key] = [];
+    index[key].push(rowIndex + 2);
+  });
+  Object.keys(index).forEach(function (key) {
+    if (index[key].length > 1) {
+      addIntegrityIssue_(report, 'CRITICAL', 'duplicate_' + codePrefix, entity, [Number(key)], 'معرف مكرر', { rows: index[key] });
+    }
+  });
+  return index;
+}
+
+function auditUniqueText_(rows, field, code, report) {
+  var values = Object.create(null);
+  rows.forEach(function (row, index) {
+    var value = text_(row[field]);
+    if (!value) return;
+    if (!values[value]) values[value] = [];
+    values[value].push({ id: number_(row.id, 0) || text_(row.id), row: index + 2 });
+  });
+  Object.keys(values).forEach(function (value) {
+    if (values[value].length > 1) {
+      addIntegrityIssue_(report, 'CRITICAL', code, 'payment', values[value].map(function (item) { return item.id; }), 'قيمة فريدة مكررة', { field: field, value: value, rows: values[value].map(function (item) { return item.row; }) });
+    }
+  });
+}
+
+function addIntegrityIssue_(report, severity, code, entity, ids, message, details) {
+  var issue = { code: code, entity: entity, ids: ids, message: message };
+  if (details !== undefined) issue.details = details;
+  report[severity].push(issue);
+}
+
+function positiveIdKey_(value) {
+  var parsed = number_(value, NaN);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? String(parsed) : '';
+}
+
+function finiteOrNull_(value) {
+  if (value === null || value === undefined || text_(value) === '') return null;
+  var parsed = number_(value, NaN);
+  return isFinite(parsed) ? parsed : null;
 }
 
 function listCustomers_() {
@@ -414,9 +713,10 @@ function permanentlyDeleteCustomer_(data) {
     var contractMatch = contractIds[number_(payment.contract_id, 0)] === true;
     if (directCustomerMatch || contractMatch) paymentRows.push(index + 2);
   });
+  if (paymentRows.length) {
+    throw new Error('لا يمكن حذف العميل نهائياً لوجود دفعات مرتبطة. استخدم الأرشفة للحفاظ على التاريخ المالي');
+  }
 
-  // حذف الأبناء أولاً يمنع ترك مراجع يتيمة حتى إذا تعثرت خطوة لاحقة.
-  deleteRowsDescending_(paymentTable.sheet, paymentRows);
   deleteRowsDescending_(contractTable.sheet, contractRows);
   customerTable.sheet.deleteRow(customer.rowNumber);
   return {
@@ -498,7 +798,9 @@ function addContract_(data) {
     updated_at: now,
     manual_reminder_date: '',
     reminder_mode: 'automatic',
-    manual_due_amount: ''
+    manual_due_amount: '',
+    dismissed_reminder_date: '',
+    manual_reminder_anchor_day: ''
   };
   row = enrichContract_(row, []);
   appendObject_('contracts', row);
@@ -528,11 +830,15 @@ function updateContract_(data) {
   }
 
   var calculated = contract_(found.object.principal, found.object.profit_percent, found.object.installments);
-  var payments = indexPaymentsByContract_(listPayments_())[contractId] || [];
+  var paymentTable = readTable_('payments');
+  var payments = indexPaymentsByContract_(paymentTable.rows)[contractId] || [];
   var alreadyPaid = activePaidTotal_(payments);
   if (calculated.total < alreadyPaid) throw new Error('إجمالي العقد الجديد أصغر من المبلغ المدفوع');
   found.object.updated_at = now_();
   var enriched = enrichContract_(found.object, payments);
+  if (data.principal !== undefined || data.profit_percent !== undefined) {
+    rebuildPaymentSnapshots_(contractId, calculated.total, paymentTable);
+  }
   writeObjectRow_(table, found.rowNumber, enriched);
   return enriched;
 }
@@ -588,6 +894,16 @@ function changeManualReminderDate_(data, reminderDate, reminderMode) {
   if (!found) throw new Error('العقد غير موجود');
   found.object.manual_reminder_date = reminderDate;
   found.object.reminder_mode = reminderMode;
+  if (reminderMode === 'manual') {
+    var parsedReminderDate = parseDateOnly_(reminderDate);
+    var requestedAnchor = data.manual_reminder_anchor_day === undefined || data.manual_reminder_anchor_day === ''
+      ? parsedReminderDate.day
+      : positiveInteger_(data.manual_reminder_anchor_day, 'يوم مرساة التذكير');
+    if (requestedAnchor > 31) throw new Error('يوم مرساة التذكير غير صالح');
+    found.object.manual_reminder_anchor_day = requestedAnchor;
+  } else {
+    found.object.manual_reminder_anchor_day = '';
+  }
   found.object.manual_due_amount = reminderMode === 'manual' && data.manual_due_amount !== undefined && data.manual_due_amount !== ''
     ? positiveInteger_(data.manual_due_amount, 'قيمة الدفعة القادمة')
     : '';
@@ -597,6 +913,39 @@ function changeManualReminderDate_(data, reminderDate, reminderMode) {
   if (enriched.manual_due_amount !== '' && enriched.manual_due_amount > enriched.remaining_amount) {
     throw new Error('قيمة الدفعة القادمة أكبر من المبلغ المتبقي');
   }
+  writeObjectRow_(table, found.rowNumber, enriched);
+  return enriched;
+}
+
+function dismissReminder_(data) {
+  var contractId = positiveInteger_(data.contract_id || data.id, 'معرف العقد');
+  var requestedDate = requireDate_(data.effective_due_date, 'موعد التذكير');
+  var table = readTable_('contracts');
+  var found = findById_(table, contractId);
+  if (!found) throw new Error('العقد غير موجود');
+  var payments = indexPaymentsByContract_(listPayments_())[contractId] || [];
+  var enriched = enrichContract_(found.object, payments);
+  var effectiveDate = enriched.reminder_mode === 'manual'
+    ? enriched.manual_reminder_date
+    : enriched.next_due_date;
+  if (!effectiveDate || effectiveDate !== requestedDate) {
+    throw new Error('موعد التذكير غير صالح أو تغير');
+  }
+  enriched.dismissed_reminder_date = effectiveDate;
+  enriched.updated_at = now_();
+  writeObjectRow_(table, found.rowNumber, enriched);
+  return enriched;
+}
+
+function restoreReminder_(data) {
+  var contractId = positiveInteger_(data.contract_id || data.id, 'معرف العقد');
+  var table = readTable_('contracts');
+  var found = findById_(table, contractId);
+  if (!found) throw new Error('العقد غير موجود');
+  found.object.dismissed_reminder_date = '';
+  found.object.updated_at = now_();
+  var payments = indexPaymentsByContract_(listPayments_())[contractId] || [];
+  var enriched = enrichContract_(found.object, payments);
   writeObjectRow_(table, found.rowNumber, enriched);
   return enriched;
 }
@@ -616,13 +965,36 @@ function setContractArchived_(contractId, archived) {
 
 function addPayment_(data) {
   var contractId = positiveInteger_(data.contract_id, 'معرف العقد');
-  // توافق انتقالي: الواجهة الجديدة ترسل request_id دائماً؛ القديمة تحصل على معرف فريد.
-  var requestId = text_(data.request_id) || 'legacy-' + Utilities.getUuid();
+  var requestId = requireText_(data.request_id, 'request_id مطلوب');
+  var amount = positiveInteger_(data.amount, 'مبلغ الدفعة');
+  var paymentDate = requireDate_(data.payment_date || today_(), 'تاريخ الدفع');
   var paymentTable = readTable_('payments');
   var duplicate = paymentTable.rows.filter(function (row) {
     return text_(row.request_id) === requestId;
   })[0];
-  if (duplicate) return duplicate; // idempotent: أعد نفس النتيجة ولا تضف صفاً.
+  if (duplicate) {
+    if (
+      number_(duplicate.contract_id, 0) !== contractId ||
+      number_(duplicate.amount, NaN) !== amount ||
+      dateText_(duplicate.payment_date) !== paymentDate
+    ) {
+      throw new Error('request_id مستخدم مسبقاً لبيانات دفعة مختلفة');
+    }
+
+    var duplicateContractTable = readTable_('contracts');
+    var duplicateContract = findById_(duplicateContractTable, contractId);
+    if (!duplicateContract) throw new Error('العقد غير موجود');
+    var duplicateDefinition = contract_(
+      integer_(duplicateContract.object.principal, 0),
+      number_(duplicateContract.object.profit_percent, 0),
+      Math.max(1, integer_(duplicateContract.object.installments, 1))
+    );
+    rebuildPaymentSnapshots_(contractId, duplicateDefinition.total, paymentTable);
+    var recoveredContract = recalculateContract_(contractId);
+    var recoveredPayment = findById_(readTable_('payments'), positiveInteger_(duplicate.id, 'معرف الدفعة')).object;
+    recoveredPayment.contract_after = recoveredContract;
+    return recoveredPayment;
+  }
 
   var contractTable = readTable_('contracts');
   var contract = findById_(contractTable, contractId);
@@ -636,7 +1008,6 @@ function addPayment_(data) {
   if (truthy_(customer.object.archived)) throw new Error('لا يمكن الدفع لعميل مؤرشف');
   if (truthy_(contract.object.archived)) throw new Error('لا يمكن الدفع لعقد مؤرشف');
 
-  var amount = positiveInteger_(data.amount, 'مبلغ الدفعة');
   var contractPayments = indexPaymentsByContract_(listPayments_())[contractId] || [];
   var current = enrichContract_(contract.object, contractPayments);
   if (current.status === 'مكتمل') throw new Error('العقد مكتمل');
@@ -644,13 +1015,13 @@ function addPayment_(data) {
 
   var id = nextNumericId_('payments', 'PAYMENT_SEQUENCE');
   var createdAt = now_();
-  var receipt = nextReceiptNumber_();
+  var receipt = nextReceiptNumber_(paymentTable);
   var row = {
     id: id,
     customer_id: customerId,
     contract_id: contractId,
     amount: amount,
-    payment_date: requireDate_(data.payment_date || today_(), 'تاريخ الدفع'),
+    payment_date: paymentDate,
     notes: text_(data.notes),
     created_at: createdAt,
     request_id: requestId,
@@ -728,13 +1099,7 @@ function rebuildPaymentSnapshots_(contractId, contractTotal, paymentTable) {
     if ((text_(payment.status) || 'active') !== 'active') return;
     active.push({ object: payment, rowNumber: index + 2 });
   });
-  active.sort(function (a, b) {
-    var byDate = dateText_(a.object.payment_date).localeCompare(dateText_(b.object.payment_date));
-    if (byDate) return byDate;
-    var byCreated = dateTimeText_(a.object.created_at).localeCompare(dateTimeText_(b.object.created_at));
-    if (byCreated) return byCreated;
-    return number_(a.object.id, 0) - number_(b.object.id, 0);
-  });
+  active.sort(function (a, b) { return comparePayments_(a.object, b.object); });
   var runningPaid = 0;
   active.forEach(function (item) {
     runningPaid += positiveInteger_(item.object.amount, 'مبلغ الدفعة');
@@ -744,18 +1109,20 @@ function rebuildPaymentSnapshots_(contractId, contractTotal, paymentTable) {
   });
 }
 
+function comparePayments_(a, b) {
+  var byDate = dateText_(a.payment_date).localeCompare(dateText_(b.payment_date));
+  if (byDate) return byDate;
+  var byCreated = dateTimeText_(a.created_at).localeCompare(dateTimeText_(b.created_at));
+  if (byCreated) return byCreated;
+  return number_(a.id, 0) - number_(b.id, 0);
+}
+
 function cancelPayment_(data) {
   var paymentId = positiveInteger_(data.payment_id || data.id, 'معرف الدفعة');
   var reason = requireText_(data.cancellation_reason, 'سبب الإلغاء مطلوب');
   var table = readTable_('payments');
   var found = findById_(table, paymentId);
   if (!found) throw new Error('الدفعة غير موجودة');
-  if ((text_(found.object.status) || 'active') === 'cancelled') return found.object;
-  found.object.status = 'cancelled';
-  found.object.cancellation_reason = reason;
-  found.object.cancelled_at = now_();
-  found.object.updated_at = now_();
-  writeObjectRow_(table, found.rowNumber, found.object);
   var contractId = positiveInteger_(found.object.contract_id, 'معرف العقد');
   var contractTable = readTable_('contracts');
   var contractFound = findById_(contractTable, contractId);
@@ -765,9 +1132,18 @@ function cancelPayment_(data) {
     nonNegativeNumber_(contractFound.object.profit_percent, 'نسبة الربح'),
     positiveInteger_(contractFound.object.installments, 'عدد الأقساط')
   );
+  if ((text_(found.object.status) || 'active') !== 'cancelled') {
+    found.object.status = 'cancelled';
+    found.object.cancellation_reason = reason;
+    found.object.cancelled_at = now_();
+    found.object.updated_at = now_();
+    writeObjectRow_(table, found.rowNumber, found.object);
+  }
   rebuildPaymentSnapshots_(contractId, calculated.total);
-  recalculateContract_(contractId);
-  return found.object;
+  var contractAfter = recalculateContract_(contractId);
+  var saved = findById_(readTable_('payments'), paymentId).object;
+  saved.contract_after = contractAfter;
+  return saved;
 }
 
 function cancelPaymentLegacy_(data) {
@@ -858,6 +1234,13 @@ function enrichContract_(row, payments) {
     : row.manual_reminder_date ? 'manual' : 'automatic';
   var manualDueAmount = number_(row.manual_due_amount, NaN);
   row.manual_due_amount = isFinite(manualDueAmount) && manualDueAmount > 0 ? Math.round(manualDueAmount) : '';
+  row.dismissed_reminder_date = dateText_(row.dismissed_reminder_date);
+  var reminderAnchorDay = number_(row.manual_reminder_anchor_day, NaN);
+  row.manual_reminder_anchor_day = row.reminder_mode === 'manual' && Number.isInteger(reminderAnchorDay) && reminderAnchorDay >= 1 && reminderAnchorDay <= 31
+    ? reminderAnchorDay
+    : row.reminder_mode === 'manual' && parseDateOnly_(row.manual_reminder_date)
+      ? parseDateOnly_(row.manual_reminder_date).day
+      : '';
   row.status = status;
   row.archived = archived;
   return row;
@@ -1036,13 +1419,47 @@ function nextNumericId_(sheetName, propertyName) {
   return next;
 }
 
-function nextReceiptNumber_() {
+function nextReceiptNumber_(paymentTable) {
   var date = Utilities.formatDate(new Date(), 'Asia/Baghdad', 'yyyyMMdd');
   var key = 'RECEIPT_SEQUENCE_' + date;
+  var prefix = 'R-' + date + '-';
   var properties = PropertiesService.getScriptProperties();
-  var next = number_(properties.getProperty(key), 0) + 1;
+  var stored = number_(properties.getProperty(key), 0);
+  var table = paymentTable || readTable_('payments');
+  var maximum = table.rows.reduce(function (max, payment) {
+    var receipt = text_(payment.receipt_number);
+    if (receipt.indexOf(prefix) !== 0) return max;
+    var sequence = receipt.slice(prefix.length);
+    return /^\d+$/.test(sequence) ? Math.max(max, number_(sequence, 0)) : max;
+  }, 0);
+  var next = Math.max(stored, maximum) + 1;
   properties.setProperty(key, String(next));
-  return 'R-' + date + '-' + String(next).padStart(4, '0');
+  return prefix + String(next).padStart(4, '0');
+}
+
+function createSpreadsheetBackup() {
+  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  var sourceFile = DriveApp.getFileById(spreadsheet.getId());
+  var timestamp = Utilities.formatDate(new Date(), 'Asia/Baghdad', 'yyyy-MM-dd_HH-mm-ss');
+  var backupName = spreadsheet.getName() + '_backup_' + timestamp;
+  var folderId = text_(PropertiesService.getScriptProperties().getProperty('BACKUP_FOLDER_ID'));
+  var backup = folderId
+    ? sourceFile.makeCopy(backupName, DriveApp.getFolderById(folderId))
+    : sourceFile.makeCopy(backupName);
+  return { id: backup.getId(), name: backup.getName(), url: backup.getUrl() };
+}
+
+function setupDailyBackupTrigger() {
+  var handler = 'createSpreadsheetBackup';
+  var triggers = ScriptApp.getProjectTriggers();
+  var existing = triggers.filter(function (trigger) {
+    return trigger.getHandlerFunction() === handler && trigger.getEventType() === ScriptApp.EventType.CLOCK;
+  });
+  if (existing.length) {
+    return { created: false, handler: handler, trigger_id: existing[0].getUniqueId() };
+  }
+  var trigger = ScriptApp.newTrigger(handler).timeBased().everyDays(1).atHour(2).create();
+  return { created: true, handler: handler, trigger_id: trigger.getUniqueId() };
 }
 
 function validSecret_(secret) {
@@ -1054,7 +1471,7 @@ function validSecret_(secret) {
 
 function safeMessage_(error) {
   var allowed = [
-    'مطلوب', 'غير موجود', 'غير صالح', 'أكبر من', 'مؤرشف', 'استرجع العميل', 'دفعات نشطة',
+    'مطلوب', 'غير موجود', 'غير صالح', 'أكبر من', 'مؤرشف', 'استرجع العميل', 'دفعات نشطة', 'دفعات مرتبطة', 'request_id',
     'شغّل upgradeSheets'
   ];
   var message = error && error.message ? String(error.message) : '';

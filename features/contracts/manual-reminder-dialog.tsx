@@ -4,6 +4,7 @@ import { FormEvent, useState } from 'react';
 import { LoaderCircle } from 'lucide-react';
 import { Field, ModalHeader } from '@/components/business-ui';
 import { clearManualReminderDate, setManualReminderDate } from '@/lib/sheets';
+import { parseDateOnly } from '@/lib/dates';
 import { addCalendarMonth, expectedPaymentAmount, reminderMode } from '@/lib/due-date';
 import type { Contract } from '@/types/domain';
 
@@ -23,6 +24,7 @@ export default function ManualReminderDialog({ contract, onClose, onSaved }: Pro
         contract.id,
         String(form.get('manual_reminder_date')),
         Number(form.get('manual_due_amount')),
+        parseDateOnly(String(form.get('manual_reminder_date'))).day,
       ));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'تعذر حفظ موعد التذكير');
@@ -39,7 +41,8 @@ export default function ManualReminderDialog({ contract, onClose, onSaved }: Pro
   async function advanceOneMonth() {
     if (!contract.manual_reminder_date) return;
     setSaving(true); setError('');
-    try { onSaved(await setManualReminderDate(contract.id, addCalendarMonth(contract.manual_reminder_date), amount)); }
+    const anchorDay = contract.manual_reminder_anchor_day ?? parseDateOnly(contract.manual_reminder_date).day;
+    try { onSaved(await setManualReminderDate(contract.id, addCalendarMonth(contract.manual_reminder_date, anchorDay), amount, anchorDay)); }
     catch (caught) { setError(caught instanceof Error ? caught.message : 'تعذر ترحيل موعد التذكير'); }
     finally { setSaving(false); }
   }

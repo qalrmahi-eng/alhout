@@ -2,6 +2,8 @@ import type {
   Contract,
   Customer,
   DashboardSummary,
+  FinancialReconciliationReport,
+  IntegrityAuditReport,
   Payment,
   ReportsSummary,
   Settings,
@@ -169,8 +171,10 @@ export function normalizeContract(value: unknown): Contract {
     current_installment_remaining: number(record.current_installment_remaining),
     next_due_date: normalizeSheetDate(record.next_due_date),
     manual_reminder_date: manualReminderDate,
+    manual_reminder_anchor_day: optionalNumber(record.manual_reminder_anchor_day),
     manual_due_amount: optionalNumber(record.manual_due_amount),
     reminder_mode: reminderMode,
+    dismissed_reminder_date: normalizeSheetDate(record.dismissed_reminder_date),
     status: status as Contract['status'],
     archived: boolean(record.archived, status === 'مؤرشف'),
     created_at: normalizeSheetDateTime(record.created_at),
@@ -283,6 +287,10 @@ export const getPayments = () => request('payments', normalizePayments);
 export const getDashboard = () => request('dashboard', normalizeDashboard);
 export const getReportsSummary = (from: string, to: string) =>
   request('reports_summary', normalizeReportsSummary, { from, to });
+export const getIntegrityAudit = () =>
+  request('integrity_audit', (value) => value as IntegrityAuditReport);
+export const getFinancialReconciliation = () =>
+  request('financial_reconciliation', (value) => value as FinancialReconciliationReport);
 export const addCustomer = (data: Record<string, unknown>) =>
   request('add_customer', normalizeCustomer, data);
 export const updateCustomer = (data: Record<string, unknown>) =>
@@ -309,14 +317,22 @@ export const deleteContractPermanently = (contractId: number) =>
     },
     { contract_id: contractId },
   );
-export const setManualReminderDate = (contractId: number, date: string, amount?: number) =>
+export const setManualReminderDate = (contractId: number, date: string, amount?: number, anchorDay?: number) =>
   request('set_manual_reminder_date', normalizeContract, {
     contract_id: contractId,
     manual_reminder_date: date,
     manual_due_amount: amount,
+    manual_reminder_anchor_day: anchorDay,
   });
 export const clearManualReminderDate = (contractId: number) =>
   request('clear_manual_reminder_date', normalizeContract, { contract_id: contractId });
+export const dismissReminder = (contractId: number, effectiveDueDate: string) =>
+  request('dismiss_reminder', normalizeContract, {
+    contract_id: contractId,
+    effective_due_date: effectiveDueDate,
+  });
+export const restoreReminder = (contractId: number) =>
+  request('restore_reminder', normalizeContract, { contract_id: contractId });
 export const archiveCustomer = (customerId: number) =>
   request('archive_customer', normalizeCustomer, { customer_id: customerId });
 export const restoreCustomer = (customerId: number) =>

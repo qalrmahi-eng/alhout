@@ -9,6 +9,7 @@ export function buildReceiptSnapshot(
 ) {
   const remaining = payment.remaining_after ?? summary.remaining;
   return {
+    cancelled: payment.status === 'cancelled',
     receiptNumber: payment.receipt_number || `R-${payment.id}`,
     customerName: customer.name,
     customerPhone: customer.phone,

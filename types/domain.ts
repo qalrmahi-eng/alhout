@@ -47,8 +47,10 @@ export interface Contract {
   current_installment_remaining: number;
   next_due_date?: string;
   manual_reminder_date?: string;
+  manual_reminder_anchor_day?: number;
   manual_due_amount?: number;
   reminder_mode?: ReminderMode;
+  dismissed_reminder_date?: string;
   status: ContractStatus;
   archived?: boolean | string;
   created_at?: string;
@@ -131,6 +133,49 @@ export interface ReportsSummary {
   new_contracts_total: number;
   new_contracts_profit: number;
   completed_contracts_count: number;
+}
+
+export interface IntegrityIssue {
+  code: string;
+  entity: string;
+  ids: Array<number | string>;
+  message: string;
+  details?: unknown;
+}
+
+export interface FinancialReconciliationRow {
+  contract_id: number | string;
+  row_number: number;
+  stored_profit: number | null;
+  calculated_profit: number | null;
+  stored_total: number | null;
+  calculated_total: number | null;
+  stored_paid: number | null;
+  calculated_paid: number;
+  cancelled_paid: number;
+  stored_remaining: number | null;
+  calculated_remaining: number | null;
+  snapshot_errors: unknown[];
+  invalid_payment_ids: Array<number | string>;
+  status_error: { stored: string; calculated: string } | null;
+  error: string | null;
+  ok: boolean;
+}
+
+export interface FinancialReconciliationReport {
+  generated_at: string;
+  dry_run: true;
+  contracts: FinancialReconciliationRow[];
+}
+
+export interface IntegrityAuditReport {
+  generated_at: string;
+  dry_run: true;
+  CRITICAL: IntegrityIssue[];
+  WARNING: IntegrityIssue[];
+  INFO: IntegrityIssue[];
+  summary: { critical: number; warning: number; info: number };
+  reconciliation: FinancialReconciliationRow[];
 }
 
 export interface ApiResponse<T = unknown> {

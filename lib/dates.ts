@@ -147,10 +147,33 @@ export function normalizeSheetDateTime(value: unknown): string {
     return `${localDateTime[1]}T${localDateTime[2]}:${localDateTime[3]}:${seconds}${milliseconds}+03:00`;
   }
 
-  const absoluteDateTime = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(text);
-  if (!absoluteDateTime) return '';
+  const absoluteDateTime = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(?:Z|[+-](\d{2}):(\d{2}))$/.exec(text);
+  if (!absoluteDateTime || !validDateOnly(absoluteDateTime[1])) return '';
+  const hour = Number(absoluteDateTime[2]);
+  const minute = Number(absoluteDateTime[3]);
+  const second = Number(absoluteDateTime[4] || 0);
+  const offsetHour = Number(absoluteDateTime[5] || 0);
+  const offsetMinute = Number(absoluteDateTime[6] || 0);
+  if (hour > 23 || minute > 59 || second > 59 || offsetHour > 23 || offsetMinute > 59) return '';
   const date = new Date(text);
-  return date ? date.toISOString() : '';
+  return validDate(date) ? date.toISOString() : '';
+}
+
+export function millisecondsUntilNextBaghdadDay(now = new Date()): number {
+  if (!validDate(now)) return 60_000;
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: BAGHDAD_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const nextMidnightUtc = Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day) + 1,
+  ) - 3 * 60 * 60 * 1_000;
+  return Math.max(1_000, nextMidnightUtc - now.getTime());
 }
 
 export function formatBaghdadDateTime(value: unknown): string {

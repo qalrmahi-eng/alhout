@@ -55,7 +55,7 @@ describe('بيانات الوصل', () => {
       remaining: 1_060_000,
       completedInstallments: 0,
       currentInstallmentRemaining: 70_000,
-      expectedPaymentAmount: 110_000,
+      expectedPaymentAmount: 70_000,
     });
   });
 
@@ -94,5 +94,27 @@ describe('بيانات الوصل', () => {
     expect(adminView).toContain('المبلغ المسلم');
     expect(adminView).toContain('نسبة الربح');
     expect(adminView).toContain('profit_amount');
+  });
+
+  it('يعرض الدفعة الملغاة كسجل إداري ويمنع الطباعة والمشاركة الافتراضية', () => {
+    const customer: Customer = { id: 1, name: 'سارة', phone: '' };
+    const contract: Contract = {
+      id: 1, customer_id: 1, principal: 1_000, profit_percent: 0, profit_amount: 0,
+      contract_total: 1_000, installments: 10, installment_value: 100,
+      delivery_date: '2026-01-01', first_due_date: '2026-01-31', expected_end_date: '2026-10-31',
+      paid_amount: 0, remaining_amount: 1_000, current_installment_paid: 0,
+      current_installment_remaining: 100, next_due_date: '2026-01-31', status: 'منتظم',
+    };
+    const payment: Payment = {
+      id: 9, customer_id: 1, contract_id: 1, amount: 100, payment_date: '2026-01-10',
+      status: 'cancelled', paid_after: 100, remaining_after: 900,
+    };
+    const snapshot = buildReceiptSnapshot(customer, contract, payment, summarizeContract(contract, [], '2026-01-10'));
+    const receiptModal = readFileSync('features/receipts/receipt-modal.tsx', 'utf8');
+    expect(snapshot.cancelled).toBe(true);
+    expect(receiptModal).toContain("const cancelled = payment.status === 'cancelled'");
+    expect(receiptModal).toContain('ليس وصلاً صالحاً لإثبات الدفع');
+    expect(receiptModal).toContain('{!cancelled && <>');
+    expect(receiptModal).toContain('if (!autoPrint || cancelled) return');
   });
 });

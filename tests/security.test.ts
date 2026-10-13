@@ -24,6 +24,15 @@ describe('حدود الحماية', () => {
     expect(code).toContain("found.object.status = 'cancelled'");
   });
 
+  it('يثبت request_id واحداً لمحاولة الدفع ويغيّره فقط عند بدء دفعة جديدة', () => {
+    const dialog = readFileSync('features/payments/payment-dialog.tsx', 'utf8');
+    expect(dialog).toContain('const requestIdRef = useRef<string | null>(null)');
+    expect(dialog).toContain('requestIdRef.current ??= crypto.randomUUID()');
+    expect(dialog).toContain('request_id: requestIdRef.current');
+    expect(dialog).toContain('requestIdRef.current = null');
+    expect(dialog).not.toContain('request_id: crypto.randomUUID()');
+  });
+
   it('لا يعيد doGet بيانات العملاء', () => {
     const code = readFileSync('google-apps-script/Code.gs', 'utf8');
     const healthHandler = code.slice(code.indexOf('function doGet()'), code.indexOf('function doPost'));
@@ -39,9 +48,13 @@ describe('حدود الحماية', () => {
     );
     expect(allowedActions).toContain("'dashboard'");
     expect(allowedActions).toContain("'reports_summary'");
+    expect(allowedActions).toContain("'integrity_audit'");
+    expect(allowedActions).toContain("'financial_reconciliation'");
     expect(allowedActions).toContain("'delete_customer_permanently'");
     expect(allowedActions).toContain("'set_manual_reminder_date'");
     expect(allowedActions).toContain("'clear_manual_reminder_date'");
+    expect(allowedActions).toContain("'dismiss_reminder'");
+    expect(allowedActions).toContain("'restore_reminder'");
     expect(allowedActions).toContain("'delete_contract_permanently'");
     expect(allowedActions).toContain("'update_payment'");
   });

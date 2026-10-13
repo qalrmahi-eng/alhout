@@ -31,6 +31,7 @@ export default function ReceiptModal({
 }: Props) {
   const receiptRef = useRef<HTMLDivElement>(null);
   const [working, setWorking] = useState(false);
+  const cancelled = payment.status === 'cancelled';
 
   useEffect(() => {
     document.documentElement.classList.add('receipt-open');
@@ -38,10 +39,10 @@ export default function ReceiptModal({
   }, []);
 
   useEffect(() => {
-    if (!autoPrint) return;
+    if (!autoPrint || cancelled) return;
     const timer = window.setTimeout(() => window.print(), 250);
     return () => window.clearTimeout(timer);
-  }, [autoPrint]);
+  }, [autoPrint, cancelled]);
 
   async function makeImage() {
     if (!receiptRef.current) throw new Error('تعذر العثور على الوصل');
@@ -101,8 +102,8 @@ export default function ReceiptModal({
       <div className="modal-panel max-w-3xl">
         <div className="no-print mb-4 flex items-center justify-between">
           <div>
-            <p className="eyebrow">تم حفظ الدفعة بنجاح</p>
-            <h2 className="text-xl font-black">وصل القبض جاهز</h2>
+            <p className="eyebrow">{cancelled ? 'سجل تاريخي — ملغى' : 'تم حفظ الدفعة بنجاح'}</p>
+            <h2 className="text-xl font-black">{cancelled ? 'هذه الدفعة ملغاة' : 'وصل القبض جاهز'}</h2>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="إغلاق">
             <X size={20} />
@@ -110,7 +111,7 @@ export default function ReceiptModal({
         </div>
 
         <div ref={receiptRef} className="receipt-paper">
-          <div className="receipt-watermark">الحوت</div>
+          <div className="receipt-watermark">{cancelled ? 'ملغى' : 'الحوت'}</div>
           <header className="receipt-header">
             <WhaleLogo />
             <div className="text-left">
@@ -125,10 +126,12 @@ export default function ReceiptModal({
             <span>وصل قبض</span>
             <small>{settings.system_name}</small>
           </div>
-          <p className="receipt-statement">
+          {cancelled ? <p className="receipt-statement late-text">
+            هذا سجل إداري تاريخي لدفعة ملغاة، وليس وصلاً صالحاً لإثبات الدفع.
+          </p> : <p className="receipt-statement">
             استلمنا من السيد/ة <strong>{snapshot.customerName}</strong> مبلغًا قدره{' '}
             <strong>{formatIqd(snapshot.paymentAmount)}</strong>، وتفاصيل الرصيد بعد هذه الدفعة مبينة أدناه.
-          </p>
+          </p>}
           <div className="receipt-grid">
             <ReceiptItem label="المبلغ المستلم" value={formatIqd(snapshot.paymentAmount)} accent />
             <ReceiptItem label="إجمالي العقد" value={formatIqd(snapshot.contractTotal)} />
@@ -141,6 +144,7 @@ export default function ReceiptModal({
             />
           </div>
           {snapshot.completed && <div className="completed-ribbon">تم إكمال العقد بالكامل</div>}
+          {cancelled && <div className="completed-ribbon">ملغى — للسجل الإداري فقط</div>}
           <div className="receipt-signatures">
             <div><span>توقيع الدافع</span><i /></div>
             <div><span>توقيع المستلم</span><i /></div>
@@ -149,15 +153,17 @@ export default function ReceiptModal({
         </div>
 
         <div className="no-print mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <button className="secondary-button" onClick={download} disabled={working}>
-            <Download size={17} /> حفظ PNG
-          </button>
-          <button className="secondary-button" onClick={share} disabled={working}>
-            <Share2 size={17} /> مشاركة
-          </button>
-          <button className="secondary-button" onClick={() => window.print()}>
-            <Printer size={17} /> طباعة / PDF
-          </button>
+          {!cancelled && <>
+            <button className="secondary-button" onClick={download} disabled={working}>
+              <Download size={17} /> حفظ PNG
+            </button>
+            <button className="secondary-button" onClick={share} disabled={working}>
+              <Share2 size={17} /> مشاركة
+            </button>
+            <button className="secondary-button" onClick={() => window.print()}>
+              <Printer size={17} /> طباعة / PDF
+            </button>
+          </>}
           <button className="primary-button" onClick={onClose}>
             <X size={17} /> إغلاق
           </button>

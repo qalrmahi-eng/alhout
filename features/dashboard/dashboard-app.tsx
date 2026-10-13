@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BellRing,
   FileText,
@@ -34,12 +34,15 @@ import ReminderCenter from '@/features/reminders/reminder-center';
 import ReportsSection from '@/features/reports/reports-section';
 import { baghdadToday, indexPaymentsByContract, summarizeContract } from '@/lib/finance';
 import { reminderBadgeCount } from '@/lib/reminders';
+import { millisecondsUntilNextBaghdadDay } from '@/lib/dates';
 import {
   archiveContract,
   cancelPayment,
   deleteContractPermanently,
   deleteCustomerPermanently,
+  dismissReminder,
   getDashboard,
+  restoreReminder,
   restoreContract,
   updateSettings,
 } from '@/lib/sheets';
@@ -55,7 +58,6 @@ import type {
 
 type Section = 'dashboard' | 'customers' | 'reminders' | 'payments' | 'reports' | 'settings';
 
-const today = baghdadToday();
 const emptySummary: DashboardSummary = {
   total_principal: 0,
   total_contract_value: 0,
@@ -79,6 +81,8 @@ const navigation: { id: Section; label: string; icon: typeof LayoutDashboard }[]
 ];
 
 export default function DashboardApp({ username }: { username: string }) {
+  const [today, setToday] = useState(() => baghdadToday());
+  const todayRef = useRef(today);
   const [section, setSection] = useState<Section>('dashboard');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -127,6 +131,22 @@ export default function DashboardApp({ username }: { username: string }) {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { document.documentElement.classList.toggle('dark', dark); }, [dark]);
+  useEffect(() => {
+    let timer = 0;
+    const schedule = () => {
+      timer = window.setTimeout(() => {
+        const nextToday = baghdadToday();
+        if (nextToday !== todayRef.current) {
+          todayRef.current = nextToday;
+          setToday(nextToday);
+          void load(true);
+        }
+        schedule();
+      }, millisecondsUntilNextBaghdadDay() + 250);
+    };
+    schedule();
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
   const contractViews = useMemo<ContractView[]>(() => {
     const customersById = new Map(customers.map((customer) => [customer.id, customer]));
@@ -149,13 +169,13 @@ export default function DashboardApp({ username }: { username: string }) {
         status: contract.status,
       } }];
     });
-  }, [contracts, customers, payments]);
+  }, [contracts, customers, payments, today]);
 
   const selectedContract = contractViews.find((contract) => contract.id === selectedContractId) || null;
   const editPaymentContract = editPaymentTarget ? contractViews.find((contract) => contract.id === editPaymentTarget.contract_id) || null : null;
   const reminderCount = useMemo(
     () => reminderBadgeCount(customers, contracts, today),
-    [customers, contracts],
+    [customers, contracts, today],
   );
 
   function go(next: Section) {
@@ -193,6 +213,28 @@ export default function DashboardApp({ username }: { username: string }) {
     window.location.assign('/login');
   }
 
+  async function dismissReminderOccurrence(contract: ContractView, dueDate: string) {
+    try {
+      const saved = await dismissReminder(contract.id, dueDate);
+      setContracts((current) => current.map((item) => item.id === saved.id ? saved : item));
+      notify('تم إخفاء هذا التنبيه فقط');
+      await load(true);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'تعذر إخفاء التنبيه', 'error');
+    }
+  }
+
+  async function restoreReminderOccurrence(contract: ContractView) {
+    try {
+      const saved = await restoreReminder(contract.id);
+      setContracts((current) => current.map((item) => item.id === saved.id ? saved : item));
+      notify('تمت استعادة التنبيه');
+      await load(true);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'تعذرت استعادة التنبيه', 'error');
+    }
+  }
+
   if (loading) return <LoadingScreen />;
 
   return <div className="app-shell">
@@ -228,9 +270,9 @@ export default function DashboardApp({ username }: { username: string }) {
           onReminder={() => setReminderTarget(selectedContract)}
           onWhatsAppError={(message) => notify(message, 'error')}
         /> : <>
-          {section === 'dashboard' && <DashboardOverview summary={summary} customers={customers} contracts={contractViews} payments={payments} today={today} onPay={setPaymentContract} onNavigate={go} />}
+          {section === 'dashboard' && <DashboardOverview summary={summary} customers={customers} contracts={contractViews} payments={payments} today={today} onPay={setPaymentContract} onDismiss={dismissReminderOccurrence} onNavigate={go} />}
           {section === 'customers' && <CustomerWorkspace customers={customers} contracts={contractViews} query={query} selectedCustomerId={selectedCustomerId} onQuery={setQuery} onSelectCustomer={setSelectedCustomerId} onEditCustomer={setCustomerModal} onDeleteCustomer={setDeleteCustomerTarget} onAddContract={(customer) => setContractModal({ contract: null, customerId: customer.id })} onOpenContract={(contract) => setSelectedContractId(contract.id)} onPay={setPaymentContract} />}
-          {section === 'reminders' && <ReminderCenter customers={customers} contracts={contractViews} today={today} onPay={setPaymentContract} notify={notify} />}
+          {section === 'reminders' && <ReminderCenter customers={customers} contracts={contractViews} today={today} onPay={setPaymentContract} onDismiss={dismissReminderOccurrence} onRestore={restoreReminderOccurrence} notify={notify} />}
           {section === 'payments' && <PaymentHistory payments={payments} customers={customers} contracts={contracts} onReceipt={(payment) => showReceipt(payment)} onEdit={setEditPaymentTarget} onCancel={setCancelTarget} />}
           {section === 'reports' && <ReportsSection customers={customers} contracts={contractViews} payments={payments} today={today} />}
           {section === 'settings' && <SettingsSection settings={settings} onSaved={async () => { notify('تم حفظ الإعدادات'); await load(true); }} />}
@@ -245,7 +287,7 @@ export default function DashboardApp({ username }: { username: string }) {
     {paymentContract && <PaymentDialog contract={paymentContract} today={today} onClose={() => setPaymentContract(null)} onRecorded={(saved) => { setPayments((current) => [...current, saved]); if (saved.contract_after) setContracts((current) => current.map((contract) => contract.id === saved.contract_id ? saved.contract_after! : contract)); void load(true); }} onReceipt={(payment, print) => showReceipt(payment, print)} />}
     {editPaymentTarget && editPaymentContract && <EditPaymentDialog payment={editPaymentTarget} contract={editPaymentContract} onClose={() => setEditPaymentTarget(null)} onSaved={async (saved) => { setEditPaymentTarget(null); setPayments((current) => current.map((payment) => payment.id === saved.id ? saved : payment)); if (saved.contract_after) setContracts((current) => current.map((contract) => contract.id === saved.contract_id ? saved.contract_after! : contract)); notify('تم تعديل الدفعة وتحديث أرصدة العقد'); await load(true); }} />}
     {reminderTarget && <ManualReminderDialog contract={reminderTarget} onClose={() => setReminderTarget(null)} onSaved={async (saved) => { setReminderTarget(null); setContracts((current) => current.map((contract) => contract.id === saved.id ? saved : contract)); notify(saved.reminder_mode === 'manual' ? 'تم حفظ موعد التذكير اليدوي' : 'تمت العودة إلى موعد التذكير التلقائي'); await load(true); }} />}
-    {cancelTarget && <CancelPaymentDialog payment={cancelTarget} onClose={() => setCancelTarget(null)} onDone={async () => { setCancelTarget(null); notify('أُلغيت الدفعة وأعيد حساب العقد'); await load(true); }} />}
+    {cancelTarget && <CancelPaymentDialog payment={cancelTarget} onClose={() => setCancelTarget(null)} onDone={async (saved) => { setCancelTarget(null); setPayments((current) => current.map((payment) => payment.id === saved.id ? saved : payment)); if (saved.contract_after) setContracts((current) => current.map((contract) => contract.id === saved.contract_id ? saved.contract_after! : contract)); notify('أُلغيت الدفعة وأعيد حساب العقد'); await load(true); }} />}
     {archiveTarget && <ConfirmDialog title={archiveTarget.status === 'مؤرشف' ? 'استرجاع العقد' : 'أرشفة العقد'} message={`سيبقى العقد ${archiveTarget.id} ودفعاته محفوظين بالكامل.`} confirmLabel={archiveTarget.status === 'مؤرشف' ? 'استرجاع' : 'أرشفة'} onClose={() => setArchiveTarget(null)} onConfirm={async () => { const saved = archiveTarget.status === 'مؤرشف' ? await restoreContract(archiveTarget.id) : await archiveContract(archiveTarget.id); setContracts((current) => current.map((contract) => contract.id === saved.id ? saved : contract)); await load(true); setArchiveTarget(null); setSelectedContractId(null); notify('تم تحديث حالة العقد'); }} />}
     {deleteContractTarget && <ConfirmDialog title="حذف العقد نهائياً" message="سيُحذف العقد نهائياً. إذا توجد دفعات نشطة، يجب إلغاؤها أولاً." confirmLabel="حذف العقد" onClose={() => setDeleteContractTarget(null)} onConfirm={async () => { const contractId = deleteContractTarget.id; const deleted = await deleteContractPermanently(contractId); setContracts((current) => current.filter((contract) => contract.id !== contractId)); setPayments((current) => current.filter((payment) => payment.contract_id !== contractId)); await load(true); setDeleteContractTarget(null); setSelectedContractId(null); setSelectedCustomerId(deleted.customer_id); setSection('customers'); notify('تم حذف العقد نهائياً'); }} />}
     {deleteCustomerTarget && <ConfirmDialog title="حذف العميل نهائياً" message="سيتم حذف العميل وجميع عقوده ودفعاته نهائياً. لا يمكن التراجع عن هذه العملية." confirmLabel="حذف نهائي" onClose={() => setDeleteCustomerTarget(null)} onConfirm={async () => { const customerId = deleteCustomerTarget.id; const contractIds = new Set(contracts.filter((contract) => contract.customer_id === customerId).map((contract) => contract.id)); const deleted = await deleteCustomerPermanently(customerId); setCustomers((current) => current.filter((customer) => customer.id !== customerId)); setContracts((current) => current.filter((contract) => contract.customer_id !== customerId)); setPayments((current) => current.filter((payment) => payment.customer_id !== customerId && !contractIds.has(payment.contract_id))); setDeleteCustomerTarget(null); setSelectedCustomerId(null); setSelectedContractId(null); notify(`حُذف العميل مع ${deleted.deleted_contracts} عقد و${deleted.deleted_payments} دفعة`); await load(true); }} />}
@@ -270,9 +312,9 @@ function SettingsSection({ settings, onSaved }: { settings: Settings; onSaved: (
   return <section className="panel max-w-3xl"><PanelTitle title="إعدادات النظام" subtitle="هوية النظام والوصل" icon={SettingsIcon} /><form className="form-grid mt-6" onSubmit={submit}><Field label="اسم النظام"><input name="system_name" defaultValue={settings.system_name} required /></Field><Field label="عبارة أسفل الوصل" wide><textarea name="receipt_footer" defaultValue={settings.receipt_footer} rows={3} /></Field>{error && <p className="error-banner form-wide">{error}</p>}<div className="form-wide flex justify-end"><button className="primary-button" disabled={saving}>{saving && <LoaderCircle className="animate-spin" size={17} />}حفظ الإعدادات</button></div></form></section>;
 }
 
-function CancelPaymentDialog({ payment, onClose, onDone }: { payment: Payment; onClose: () => void; onDone: () => void }) {
+function CancelPaymentDialog({ payment, onClose, onDone }: { payment: Payment; onClose: () => void; onDone: (saved: Payment) => Promise<void> }) {
   const [saving, setSaving] = useState(false); const [error, setError] = useState('');
-  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); setError(''); const form = new FormData(event.currentTarget); try { await cancelPayment(payment.id, String(form.get('reason'))); onDone(); } catch (caught) { setError(caught instanceof Error ? caught.message : 'تعذر إلغاء الدفعة'); } finally { setSaving(false); } }
+  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setSaving(true); setError(''); const form = new FormData(event.currentTarget); try { const saved = await cancelPayment(payment.id, String(form.get('reason'))); await onDone(saved); } catch (caught) { setError(caught instanceof Error ? caught.message : 'تعذر إلغاء الدفعة'); } finally { setSaving(false); } }
   return <div className="modal-backdrop"><div className="modal-panel max-w-lg"><ModalHeader title="إلغاء دفعة مالية" onClose={onClose} /><p className="mb-4 text-sm leading-7 text-slate-500">لن تُحذف الدفعة. ستبقى في السجل كملغاة ويعاد حساب العقد بدونها.</p><form onSubmit={submit}><Field label="سبب الإلغاء"><textarea name="reason" rows={4} minLength={3} required /></Field>{error && <p className="error-banner mt-3">{error}</p>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>تراجع</button><button className="danger-button" disabled={saving}>تأكيد الإلغاء</button></div></form></div></div>;
 }
 
