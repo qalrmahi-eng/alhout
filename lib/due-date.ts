@@ -10,7 +10,7 @@ export function reminderMode(contract: Contract): ReminderMode {
 
 export function effectiveDueDate(
   contract: Contract,
-  automaticDate: string | null | undefined = contract.next_due_date,
+  automaticDate: string | null | undefined = contract.operational_due_date || contract.next_due_date,
 ): string | null {
   return reminderMode(contract) === 'manual'
     ? contract.manual_reminder_date || null
@@ -36,9 +36,11 @@ export function expectedPaymentAmount(
   remaining = contract.remaining_amount,
 ): number {
   const mode = reminderMode(contract);
-  const automaticDue = contract.current_installment_remaining > 0
-    ? contract.current_installment_remaining
-    : contract.installment_value;
+  const automaticDue = contract.operational_due_amount !== undefined
+    ? contract.operational_due_amount
+    : contract.current_installment_remaining > 0
+      ? contract.current_installment_remaining
+      : contract.installment_value;
   const fallback = Math.min(mode === 'manual' ? contract.installment_value : automaticDue, remaining);
   const requested = mode === 'manual' && contract.manual_due_amount !== undefined
     ? contract.manual_due_amount

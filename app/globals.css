@@ -234,14 +234,14 @@ td { padding: .85rem .8rem; border-top: 1px solid var(--line); font-size: .75rem
 .receipt-title { display: flex; align-items: baseline; justify-content: space-between; padding: 1rem 0; }
 .receipt-title span { font-size: 1.45rem; font-weight: 900; }.receipt-title small { color: #0f9f92; font-weight: 800; }
 .receipt-statement { padding: .9rem; line-height: 2; background: #f3faf9; border-radius: .8rem; font-size: .82rem; }
-.receipt-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem; margin-top: 1rem; }
+.receipt-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: .6rem; margin-top: 1rem; }
 .receipt-item { padding: .65rem; border: 1px solid #e5ebef; border-radius: .7rem; }
 .receipt-item span, .receipt-item strong { display: block; }.receipt-item span { color: #64748b; font-size: .62rem; }.receipt-item strong { margin-top: .25rem; font-size: .75rem; }
 .receipt-item-accent { color: white; background: #0f766e; border-color: #0f766e; }.receipt-item-accent span { color: #ccfbf1; }
+.receipt-item-main { grid-column: 1 / -1; padding: 1rem; text-align: center; }
+.receipt-item-main strong { font-size: 1rem; }
 .completed-ribbon { margin-top: 1rem; padding: .7rem; text-align: center; color: #047857; background: #d1fae5; border: 1px solid #6ee7b7; border-radius: .8rem; font-weight: 900; }
-.receipt-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; margin: 3rem 1rem 2rem; text-align: center; font-size: .7rem; color: #64748b; }
-.receipt-signatures i { display: block; margin-top: 2rem; border-bottom: 1px solid #94a3b8; }
-.receipt-paper footer { padding-top: .7rem; text-align: center; border-top: 1px dashed #cbd5e1; color: #64748b; font-size: .65rem; }
+.receipt-paper footer { margin-top: 1rem; padding-top: .7rem; text-align: center; border-top: 1px dashed #cbd5e1; color: #64748b; font-size: .65rem; }
 
 /* Phase 2–4 workspaces */
 .top-actions { display: flex; align-items: center; gap: .55rem; }

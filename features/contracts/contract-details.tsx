@@ -6,7 +6,7 @@ import { EmptyState, StatusBadge } from '@/components/business-ui';
 import { formatBaghdadDateTime } from '@/lib/dates';
 import { formatContractNumber, formatDate, formatIqd } from '@/lib/formatters';
 import { buildWhatsAppUrl } from '@/lib/whatsapp';
-import { effectiveDueDate, reminderMode } from '@/lib/due-date';
+import { effectiveDueDate, expectedPaymentAmount, reminderMode } from '@/lib/due-date';
 import type { ContractView, Payment } from '@/types/domain';
 
 type Props = {
@@ -22,6 +22,7 @@ type Props = {
   onArchive: () => void;
   onDelete: () => void;
   onReminder: () => void;
+  onCollectionBaseline: () => void;
   onWhatsAppError: (message: string) => void;
 };
 
@@ -45,6 +46,7 @@ export default function ContractDetails(props: Props) {
           <button className="secondary-button compact" onClick={whatsapp} disabled={!effectiveDueDate(contract) || contract.remaining_amount <= 0}><MessageCircle size={16} /> واتساب</button>
           <button className="secondary-button compact" onClick={props.onEdit} disabled={contract.status === 'مؤرشف'}><Pencil size={16} /> تعديل</button>
           <button className="secondary-button compact" onClick={props.onReminder}><CalendarClock size={16} /> {reminderMode(contract) === 'manual' ? 'تعديل موعد التذكير' : 'تحديد موعد التذكير'}</button>
+          <button className="secondary-button compact" onClick={props.onCollectionBaseline} disabled={['مكتمل', 'مؤرشف'].includes(progress.status)}><CalendarClock size={16} /> {contract.collection_start_date ? 'تعديل بداية التحصيل' : 'ضبط بداية التحصيل'}</button>
           <button className="secondary-button compact" onClick={props.onArchive}>{contract.status === 'مؤرشف' ? <RotateCcw size={16} /> : <Archive size={16} />}{contract.status === 'مؤرشف' ? 'استرجاع' : 'أرشفة'}</button>
           <button className="danger-button compact" onClick={props.onDelete}><Trash2 size={16} /> حذف العقد</button>
           <button className="primary-button compact" onClick={props.onPay} disabled={['مكتمل', 'مؤرشف'].includes(progress.status)}><WalletCards size={16} /> إضافة دفعة</button>
@@ -56,7 +58,7 @@ export default function ContractDetails(props: Props) {
         <Metric label="المدفوع" value={formatIqd(contract.paid_amount)} />
         <Metric label="المتبقي" value={formatIqd(contract.remaining_amount)} accent />
         <Metric label="قيمة القسط" value={formatIqd(contract.installment_value)} />
-        <Metric label="الاستحقاق القادم" value={formatDate(contract.next_due_date)} />
+        <Metric label="الاستحقاق المالي النظري" value={formatDate(contract.next_due_date)} />
       </div>
     </section>
 
@@ -73,7 +75,8 @@ export default function ContractDetails(props: Props) {
           <Info label="تاريخ التسليم" value={formatDate(contract.delivery_date)} />
           <Info label="أول استحقاق" value={formatDate(contract.first_due_date)} />
           <Info label="آخر استحقاق متوقع" value={formatDate(contract.expected_end_date)} />
-          <Info label="موعد التذكير" value={<span className="reminder-info-value">{formatDate(effectiveDueDate(contract))}{reminderMode(contract) === 'manual' && <em className="muted-badge">تذكير يدوي</em>}</span>} />
+          <Info label="موعد التحصيل الفعلي" value={<span className="reminder-info-value">{formatDate(effectiveDueDate(contract))}{reminderMode(contract) === 'manual' ? <em className="muted-badge">يدوي</em> : contract.collection_start_date ? <em className="muted-badge">تلقائي تشغيلي</em> : <em className="muted-badge">تلقائي مالي</em>}</span>} />
+          <Info label="مبلغ التحصيل الفعلي" value={formatIqd(expectedPaymentAmount(contract))} />
           <Info label="نسبة الربح" value={`${contract.profit_percent}%`} />
           <Info label="مبلغ الربح" value={formatIqd(contract.profit_amount)} />
           <Info label="الكفيل" value={contract.guarantor_name || '—'} />
@@ -85,7 +88,7 @@ export default function ContractDetails(props: Props) {
 
     <section className="panel overflow-hidden">
       <h3 className="section-heading">جدول الأقساط</h3>
-      {reminderMode(contract) === 'manual' && <p className="mt-2 text-xs leading-6 text-amber-700">هذا جدول حسابي داخلي، والمتابعة الفعلية تعتمد موعد التذكير اليدوي.</p>}
+      {(reminderMode(contract) === 'manual' || contract.collection_start_date) && <p className="mt-2 text-xs leading-6 text-amber-700">هذا جدول حسابي داخلي، والمتابعة الفعلية تعتمد {reminderMode(contract) === 'manual' ? 'موعد التذكير اليدوي' : 'بداية التحصيل التشغيلية'}.</p>}
       <div className="table-wrap mt-4 max-h-96"><table><thead><tr><th>#</th><th>الاستحقاق</th><th>القيمة</th><th>المدفوع</th><th>المتبقي</th><th>الحالة</th></tr></thead><tbody>{progress.schedule.map((row) => <tr key={row.number}><td>{row.number}</td><td>{formatDate(row.dueDate)}</td><td>{formatIqd(row.amount)}</td><td>{formatIqd(row.paid)}</td><td>{formatIqd(row.remaining)}</td><td><span className="status">{row.status}</span></td></tr>)}</tbody></table></div>
     </section>
 

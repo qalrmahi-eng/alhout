@@ -25,7 +25,8 @@ var SHEETS = {
       'paid_amount', 'remaining_amount', 'current_installment_paid',
       'current_installment_remaining', 'next_due_date', 'status', 'archived',
       'created_at', 'updated_at', 'manual_reminder_date', 'reminder_mode',
-      'manual_due_amount', 'dismissed_reminder_date', 'manual_reminder_anchor_day'
+      'manual_due_amount', 'dismissed_reminder_date', 'manual_reminder_anchor_day',
+      'collection_start_date', 'collection_baseline_paid'
     ]
   },
   payments: {
@@ -102,6 +103,8 @@ function dispatch_(action, data, trackingId) {
     delete_contract_permanently: permanentlyDeleteContract_,
     set_manual_reminder_date: setManualReminderDate_,
     clear_manual_reminder_date: clearManualReminderDate_,
+    set_collection_baseline: setCollectionBaseline_,
+    clear_collection_baseline: clearCollectionBaseline_,
     dismiss_reminder: dismissReminder_,
     restore_reminder: restoreReminder_,
     add_payment: addPayment_,
@@ -431,6 +434,7 @@ function integrityAudit_() {
   auditIdColumn_(paymentTable.rows, 'payment', 'payment_id', report);
   auditUniqueText_(paymentTable.rows, 'request_id', 'duplicate_request_id', report);
   auditUniqueText_(paymentTable.rows, 'receipt_number', 'duplicate_receipt_number', report);
+  var paymentsByContract = indexPaymentsByContract_(paymentTable.rows);
 
   contractTable.rows.forEach(function (contract, index) {
     var contractId = number_(contract.id, 0) || text_(contract.id) || 'row:' + (index + 2);
@@ -459,7 +463,16 @@ function integrityAudit_() {
       addIntegrityIssue_(report, 'WARNING', 'invalid_manual_reminder_anchor', 'contract', [contractId], 'مرساة يوم التذكير اليدوي غير صالحة');
     }
     var dismissed = text_(contract.dismissed_reminder_date);
-    var effectiveDue = mode === 'manual' ? manualDate : dateText_(contract.next_due_date);
+    var operationalDue = '';
+    try {
+      operationalDue = enrichContract_(
+        Object.assign({}, contract),
+        paymentsByContract[number_(contract.id, 0)] || []
+      ).operational_due_date;
+    } catch (ignored) {
+      operationalDue = dateText_(contract.next_due_date);
+    }
+    var effectiveDue = mode === 'manual' ? manualDate : operationalDue;
     if (dismissed && !dateText_(dismissed)) {
       addIntegrityIssue_(report, 'WARNING', 'invalid_dismissed_reminder', 'contract', [contractId], 'تاريخ إخفاء التذكير غير صالح');
     } else if (dismissed && dismissed !== effectiveDue) {
@@ -800,7 +813,9 @@ function addContract_(data) {
     reminder_mode: 'automatic',
     manual_due_amount: '',
     dismissed_reminder_date: '',
-    manual_reminder_anchor_day: ''
+    manual_reminder_anchor_day: '',
+    collection_start_date: '',
+    collection_baseline_paid: ''
   };
   row = enrichContract_(row, []);
   appendObject_('contracts', row);
@@ -887,6 +902,50 @@ function clearManualReminderDate_(data) {
   return changeManualReminderDate_(data, '', 'automatic');
 }
 
+function setCollectionBaseline_(data) {
+  var contractId = positiveInteger_(data.contract_id || data.id, 'معرف العقد');
+  var startDate = requireDate_(data.collection_start_date, 'تاريخ بداية التحصيل');
+  var table = readTable_('contracts');
+  requireTableHeaders_(table, ['collection_start_date', 'collection_baseline_paid'], 'ضبط بداية التحصيل');
+  var found = findById_(table, contractId);
+  if (!found) throw new Error('العقد غير موجود');
+  if (truthy_(found.object.archived)) throw new Error('استرجع العقد من الأرشيف قبل ضبط بداية التحصيل');
+  var payments = indexPaymentsByContract_(listPayments_())[contractId] || [];
+  var current = enrichContract_(found.object, payments);
+  if (current.remaining_amount <= 0) throw new Error('العقد مكتمل ولا يحتوي مبلغاً متبقياً');
+  var existingBaselineText = text_(found.object.collection_baseline_paid);
+  var existingBaseline = number_(found.object.collection_baseline_paid, NaN);
+  found.object.collection_start_date = startDate;
+  found.object.collection_baseline_paid = existingBaselineText && Number.isSafeInteger(existingBaseline) && existingBaseline >= 0
+    ? existingBaseline
+    : current.paid_amount;
+  found.object.reminder_mode = 'automatic';
+  found.object.manual_reminder_date = '';
+  found.object.manual_due_amount = '';
+  found.object.manual_reminder_anchor_day = '';
+  found.object.dismissed_reminder_date = '';
+  found.object.updated_at = now_();
+  var enriched = enrichContract_(found.object, payments);
+  writeObjectRow_(table, found.rowNumber, enriched);
+  return enriched;
+}
+
+function clearCollectionBaseline_(data) {
+  var contractId = positiveInteger_(data.contract_id || data.id, 'معرف العقد');
+  var table = readTable_('contracts');
+  requireTableHeaders_(table, ['collection_start_date', 'collection_baseline_paid'], 'إلغاء بداية التحصيل');
+  var found = findById_(table, contractId);
+  if (!found) throw new Error('العقد غير موجود');
+  found.object.collection_start_date = '';
+  found.object.collection_baseline_paid = '';
+  found.object.dismissed_reminder_date = '';
+  found.object.updated_at = now_();
+  var payments = indexPaymentsByContract_(listPayments_())[contractId] || [];
+  var enriched = enrichContract_(found.object, payments);
+  writeObjectRow_(table, found.rowNumber, enriched);
+  return enriched;
+}
+
 function changeManualReminderDate_(data, reminderDate, reminderMode) {
   var contractId = positiveInteger_(data.contract_id || data.id, 'معرف العقد');
   var table = readTable_('contracts');
@@ -921,25 +980,31 @@ function dismissReminder_(data) {
   var contractId = positiveInteger_(data.contract_id || data.id, 'معرف العقد');
   var requestedDate = requireDate_(data.effective_due_date, 'موعد التذكير');
   var table = readTable_('contracts');
+  requireTableHeaders_(table, ['dismissed_reminder_date'], 'إخفاء التذكير');
   var found = findById_(table, contractId);
   if (!found) throw new Error('العقد غير موجود');
   var payments = indexPaymentsByContract_(listPayments_())[contractId] || [];
   var enriched = enrichContract_(found.object, payments);
   var effectiveDate = enriched.reminder_mode === 'manual'
     ? enriched.manual_reminder_date
-    : enriched.next_due_date;
+    : enriched.operational_due_date;
   if (!effectiveDate || effectiveDate !== requestedDate) {
     throw new Error('موعد التذكير غير صالح أو تغير');
   }
   enriched.dismissed_reminder_date = effectiveDate;
   enriched.updated_at = now_();
   writeObjectRow_(table, found.rowNumber, enriched);
-  return enriched;
+  var persisted = findById_(readTable_('contracts'), contractId);
+  if (!persisted || dateText_(persisted.object.dismissed_reminder_date) !== effectiveDate) {
+    throw new Error('تعذر حفظ إخفاء التذكير');
+  }
+  return enrichContract_(persisted.object, payments);
 }
 
 function restoreReminder_(data) {
   var contractId = positiveInteger_(data.contract_id || data.id, 'معرف العقد');
   var table = readTable_('contracts');
+  requireTableHeaders_(table, ['dismissed_reminder_date'], 'استعادة التذكير');
   var found = findById_(table, contractId);
   if (!found) throw new Error('العقد غير موجود');
   found.object.dismissed_reminder_date = '';
@@ -947,7 +1012,11 @@ function restoreReminder_(data) {
   var payments = indexPaymentsByContract_(listPayments_())[contractId] || [];
   var enriched = enrichContract_(found.object, payments);
   writeObjectRow_(table, found.rowNumber, enriched);
-  return enriched;
+  var persisted = findById_(readTable_('contracts'), contractId);
+  if (!persisted || text_(persisted.object.dismissed_reminder_date)) {
+    throw new Error('تعذر حفظ استعادة التذكير');
+  }
+  return enrichContract_(persisted.object, payments);
 }
 
 function setContractArchived_(contractId, archived) {
@@ -1227,6 +1296,23 @@ function enrichContract_(row, payments) {
   row.current_installment_remaining = currentIndex === -1 ? 0 :
     contract.parts[currentIndex] - allocation.paidByInstallment[currentIndex];
   row.next_due_date = nextDue;
+  row.collection_start_date = dateText_(row.collection_start_date);
+  var collectionBaselineText = text_(row.collection_baseline_paid);
+  var collectionBaseline = number_(row.collection_baseline_paid, NaN);
+  row.collection_baseline_paid = row.collection_start_date && collectionBaselineText && Number.isSafeInteger(collectionBaseline) && collectionBaseline >= 0
+    ? collectionBaseline
+    : '';
+  var operationalCollection = operationalCollectionState_(
+    row.collection_start_date,
+    row.collection_baseline_paid,
+    paid,
+    row.remaining_amount,
+    contract.parts[0],
+    row.current_installment_remaining,
+    nextDue
+  );
+  row.operational_due_date = operationalCollection.due_date;
+  row.operational_due_amount = operationalCollection.due_amount;
   row.manual_reminder_date = dateText_(row.manual_reminder_date);
   var reminderMode = text_(row.reminder_mode).toLowerCase();
   row.reminder_mode = reminderMode === 'manual' || reminderMode === 'automatic'
@@ -1244,6 +1330,24 @@ function enrichContract_(row, payments) {
   row.status = status;
   row.archived = archived;
   return row;
+}
+
+function operationalCollectionState_(startDate, baselinePaid, paid, remaining, installmentValue, financialDueAmount, financialDueDate) {
+  if (remaining <= 0) return { due_date: '', due_amount: 0 };
+  var validBaseline = Number.isSafeInteger(baselinePaid) && baselinePaid >= 0;
+  if (!startDate || !validBaseline || installmentValue <= 0) {
+    return {
+      due_date: financialDueDate,
+      due_amount: Math.max(0, Math.min(financialDueAmount, remaining))
+    };
+  }
+  var operationalPaid = Math.max(0, paid - baselinePaid);
+  var coveredInstallments = Math.floor(operationalPaid / installmentValue);
+  var partialPaid = operationalPaid - coveredInstallments * installmentValue;
+  return {
+    due_date: dueDate_(startDate, coveredInstallments, 'monthly'),
+    due_amount: Math.max(0, Math.min(installmentValue - partialPaid, remaining))
+  };
 }
 
 function contract_(principal, percent, count) {
@@ -1373,6 +1477,18 @@ function readTable_(name) {
     rawHeaders: inspected.raw,
     rows: rows
   };
+}
+
+function requireTableHeaders_(table, requiredHeaders, actionLabel) {
+  var missing = requiredHeaders.filter(function (header) {
+    return table.headers.indexOf(canonicalHeader_(header)) === -1;
+  });
+  if (missing.length) {
+    throw new Error(
+      actionLabel + ' غير متاح قبل إضافة الحقول المطلوبة: ' + missing.join(', ') +
+      '. شغّل upgradeSheets بعد أخذ نسخة احتياطية ومراجعة تقرير dry run.'
+    );
+  }
 }
 
 function readHeaders_(sheet) {

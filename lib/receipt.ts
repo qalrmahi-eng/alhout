@@ -8,6 +8,9 @@ export function buildReceiptSnapshot(
   summary: ContractSummary,
 ) {
   const remaining = payment.remaining_after ?? summary.remaining;
+  const historicalContractTotal = payment.paid_after !== undefined && payment.remaining_after !== undefined
+    ? payment.paid_after + payment.remaining_after
+    : summary.contractTotal;
   return {
     cancelled: payment.status === 'cancelled',
     receiptNumber: payment.receipt_number || `R-${payment.id}`,
@@ -17,7 +20,7 @@ export function buildReceiptSnapshot(
     principal: contract.principal,
     profitPercent: contract.profit_percent,
     profitAmount: summary.profitAmount,
-    contractTotal: summary.contractTotal,
+    contractTotal: historicalContractTotal,
     paymentAmount: payment.amount,
     paidAfterPayment: payment.paid_after ?? summary.paidAmount,
     remaining,

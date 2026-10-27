@@ -22,6 +22,8 @@ const ALLOWED_ACTIONS = new Set([
   'delete_contract_permanently',
   'set_manual_reminder_date',
   'clear_manual_reminder_date',
+  'set_collection_baseline',
+  'clear_collection_baseline',
   'dismiss_reminder',
   'restore_reminder',
   'add_payment',

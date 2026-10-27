@@ -137,6 +137,26 @@ describe('مركز التذكيرات', () => {
     expect(buildReminders([customer], [row, row], '2026-09-04')).toHaveLength(1);
   });
 
+  it('يوحد الموعد والمبلغ التشغيلي في Badge والمركز وواتساب ويحافظ على occurrence الجزئي', () => {
+    const row = contract(13, '2027-03-01');
+    row.operational_due_date = '2026-11-01';
+    row.operational_due_amount = 50_000;
+    row.dismissed_reminder_date = '2026-11-01';
+    expect(effectiveDueDate(row)).toBe('2026-11-01');
+    expect(expectedPaymentAmount(row)).toBe(50_000);
+    expect(buildReminders([customer], [row], '2026-11-02')).toHaveLength(0);
+    expect(reminderBadgeCount([customer], [row], '2026-11-02')).toBe(0);
+    expect(buildDismissedReminders([customer], [row], '2026-11-02')).toHaveLength(1);
+
+    row.operational_due_amount = 40_000;
+    expect(buildReminders([customer], [row], '2026-11-02')).toHaveLength(0);
+    row.operational_due_date = '2026-12-01';
+    row.operational_due_amount = 120_000;
+    expect(buildRemindersForDate([customer], [row], '2026-11-02', '2026-12-01')).toHaveLength(1);
+    expect(buildWhatsAppMessage(customer, row, '2026-11-30')).toContain('120,000 د.ع');
+    expect(buildWhatsAppMessage(customer, row, '2026-11-30')).toContain('01/12/2026');
+  });
+
   it('يستبعد العقد المؤرشف أو المحذوف من التذكيرات دون التأثير في العقد الآخر', () => {
     const archived = contract(21, '2026-09-04');
     const other = contract(22, '2026-09-05');

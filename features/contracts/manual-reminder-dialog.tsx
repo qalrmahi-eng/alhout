@@ -5,7 +5,7 @@ import { LoaderCircle } from 'lucide-react';
 import { Field, ModalHeader } from '@/components/business-ui';
 import { clearManualReminderDate, setManualReminderDate } from '@/lib/sheets';
 import { parseDateOnly } from '@/lib/dates';
-import { addCalendarMonth, expectedPaymentAmount, reminderMode } from '@/lib/due-date';
+import { addCalendarMonth, effectiveDueDate, expectedPaymentAmount, reminderMode } from '@/lib/due-date';
 import type { Contract } from '@/types/domain';
 
 type Props = { contract: Contract; onClose: () => void; onSaved: (contract: Contract) => void };
@@ -50,7 +50,7 @@ export default function ManualReminderDialog({ contract, onClose, onSaved }: Pro
   return <div className="modal-backdrop"><div className="modal-panel max-w-md">
     <ModalHeader title={isManual ? 'تعديل موعد التذكير' : 'تحديد موعد التذكير'} onClose={onClose} />
     <form onSubmit={submit} className="space-y-4">
-      <Field label="موعد الدفعة القادمة"><input name="manual_reminder_date" type="date" defaultValue={contract.manual_reminder_date || contract.next_due_date} required /></Field>
+      <Field label="موعد الدفعة القادمة"><input name="manual_reminder_date" type="date" defaultValue={contract.manual_reminder_date || effectiveDueDate(contract) || ''} required /></Field>
       <Field label="قيمة الدفعة القادمة"><input name="manual_due_amount" type="number" min="1" max={contract.remaining_amount} step="1" value={amount || ''} onChange={(event) => setAmount(Number(event.target.value))} required /></Field>
       <button type="button" className="secondary-button compact" disabled={saving || contract.remaining_amount <= 0} onClick={() => setAmount(contract.remaining_amount)}>كامل المتبقي</button>
       <p className="text-xs leading-6 text-slate-500">هذا الموعد للتذكير والتواصل فقط، ولا يغيّر الأقساط أو الرصيد أو موعد الاستحقاق المالي.</p>

@@ -91,9 +91,31 @@ describe('بيانات الوصل', () => {
     expect(receiptModal).not.toContain('مبلغ الربح');
     expect(receiptModal).not.toContain('الأقساط المكتملة');
     expect(receiptModal).not.toContain('currentInstallment');
+    expect(receiptModal).not.toContain('إجمالي المدفوع بعد الدفعة');
+    expect(receiptModal).not.toContain('قيمة الدفعة القادمة');
+    expect(receiptModal).not.toContain('موعد القسط القادم');
+    expect(receiptModal).not.toContain('توقيع الدافع');
+    expect(receiptModal).not.toContain('توقيع المستلم');
+    expect(receiptModal).toContain('المبلغ المستلم');
+    expect(receiptModal).toContain('إجمالي العقد');
+    expect(receiptModal).toContain('المتبقي بعد الدفعة');
     expect(adminView).toContain('المبلغ المسلم');
     expect(adminView).toContain('نسبة الربح');
     expect(adminView).toContain('profit_amount');
+  });
+
+  it('يثبت إجمالي العقد التاريخي من snapshot عند فتح وصل قديم', () => {
+    const customer: Customer = { id: 1, name: 'سارة', phone: '' };
+    const contract: Contract = {
+      id: 1, customer_id: 1, principal: 1_500, profit_percent: 0, profit_amount: 0,
+      contract_total: 1_500, installments: 10, installment_value: 150,
+      delivery_date: '2026-01-01', first_due_date: '2026-01-31', expected_end_date: '2026-10-31',
+      paid_amount: 300, remaining_amount: 1_200, current_installment_paid: 0,
+      current_installment_remaining: 150, next_due_date: '2026-03-31', status: 'منتظم',
+    };
+    const payment: Payment = { id: 5, customer_id: 1, contract_id: 1, amount: 100, payment_date: '2026-01-10', paid_after: 100, remaining_after: 900 };
+    const snapshot = buildReceiptSnapshot(customer, contract, payment, summarizeContract(contract, [], '2026-01-10'));
+    expect(snapshot).toMatchObject({ contractTotal: 1_000, paidAfterPayment: 100, remaining: 900 });
   });
 
   it('يعرض الدفعة الملغاة كسجل إداري ويمنع الطباعة والمشاركة الافتراضية', () => {

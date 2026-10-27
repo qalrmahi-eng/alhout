@@ -170,6 +170,10 @@ export function normalizeContract(value: unknown): Contract {
     current_installment_paid: number(record.current_installment_paid),
     current_installment_remaining: number(record.current_installment_remaining),
     next_due_date: normalizeSheetDate(record.next_due_date),
+    collection_start_date: normalizeSheetDate(record.collection_start_date),
+    collection_baseline_paid: optionalNumber(record.collection_baseline_paid),
+    operational_due_date: normalizeSheetDate(record.operational_due_date),
+    operational_due_amount: optionalNumber(record.operational_due_amount),
     manual_reminder_date: manualReminderDate,
     manual_reminder_anchor_day: optionalNumber(record.manual_reminder_anchor_day),
     manual_due_amount: optionalNumber(record.manual_due_amount),
@@ -326,6 +330,13 @@ export const setManualReminderDate = (contractId: number, date: string, amount?:
   });
 export const clearManualReminderDate = (contractId: number) =>
   request('clear_manual_reminder_date', normalizeContract, { contract_id: contractId });
+export const setCollectionBaseline = (contractId: number, collectionStartDate: string) =>
+  request('set_collection_baseline', normalizeContract, {
+    contract_id: contractId,
+    collection_start_date: collectionStartDate,
+  });
+export const clearCollectionBaseline = (contractId: number) =>
+  request('clear_collection_baseline', normalizeContract, { contract_id: contractId });
 export const dismissReminder = (contractId: number, effectiveDueDate: string) =>
   request('dismiss_reminder', normalizeContract, {
     contract_id: contractId,

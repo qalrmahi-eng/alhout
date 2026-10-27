@@ -46,6 +46,10 @@ export interface Contract {
   current_installment_paid: number;
   current_installment_remaining: number;
   next_due_date?: string;
+  collection_start_date?: string;
+  collection_baseline_paid?: number;
+  operational_due_date?: string;
+  operational_due_amount?: number;
   manual_reminder_date?: string;
   manual_reminder_anchor_day?: number;
   manual_due_amount?: number;

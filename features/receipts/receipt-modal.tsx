@@ -133,22 +133,12 @@ export default function ReceiptModal({
             <strong>{formatIqd(snapshot.paymentAmount)}</strong>، وتفاصيل الرصيد بعد هذه الدفعة مبينة أدناه.
           </p>}
           <div className="receipt-grid">
-            <ReceiptItem label="المبلغ المستلم" value={formatIqd(snapshot.paymentAmount)} accent />
+            <ReceiptItem label="المبلغ المستلم" value={formatIqd(snapshot.paymentAmount)} accent main />
             <ReceiptItem label="إجمالي العقد" value={formatIqd(snapshot.contractTotal)} />
-            <ReceiptItem label="إجمالي المدفوع بعد الدفعة" value={formatIqd(snapshot.paidAfterPayment)} />
             <ReceiptItem label="المتبقي بعد الدفعة" value={formatIqd(snapshot.remaining)} />
-            <ReceiptItem label="قيمة الدفعة القادمة" value={formatIqd(snapshot.expectedPaymentAmount)} />
-            <ReceiptItem
-              label="موعد القسط القادم"
-              value={snapshot.completed ? 'تم إكمال العقد' : formatDate(snapshot.nextDueDate)}
-            />
           </div>
           {snapshot.completed && <div className="completed-ribbon">تم إكمال العقد بالكامل</div>}
           {cancelled && <div className="completed-ribbon">ملغى — للسجل الإداري فقط</div>}
-          <div className="receipt-signatures">
-            <div><span>توقيع الدافع</span><i /></div>
-            <div><span>توقيع المستلم</span><i /></div>
-          </div>
           <footer>{settings.receipt_footer || 'هذا الوصل تأكيد باستلام المبلغ المبين أعلاه.'}</footer>
         </div>
 
@@ -177,13 +167,15 @@ function ReceiptItem({
   label,
   value,
   accent = false,
+  main = false,
 }: {
   label: string;
   value: string;
   accent?: boolean;
+  main?: boolean;
 }) {
   return (
-    <div className={accent ? 'receipt-item receipt-item-accent' : 'receipt-item'}>
+    <div className={`receipt-item${accent ? ' receipt-item-accent' : ''}${main ? ' receipt-item-main' : ''}`}>
       <span>{label}</span>
       <strong>{value}</strong>
     </div>

@@ -38,6 +38,8 @@ type GasRuntime = {
   updatePayment_: (data: Record<string, unknown>) => Record<string, unknown>;
   setManualReminderDate_: (data: Record<string, unknown>) => Record<string, unknown>;
   clearManualReminderDate_: (data: Record<string, unknown>) => Record<string, unknown>;
+  setCollectionBaseline_: (data: Record<string, unknown>) => Record<string, unknown>;
+  clearCollectionBaseline_: (data: Record<string, unknown>) => Record<string, unknown>;
   dismissReminder_: (data: Record<string, unknown>) => Record<string, unknown>;
   restoreReminder_: (data: Record<string, unknown>) => Record<string, unknown>;
   archiveCustomer_: (data: Record<string, unknown>) => Record<string, unknown>;
@@ -104,6 +106,7 @@ const contractHeaders = [
   'current_installment_paid', 'current_installment_remaining', 'next_due_date', 'status',
   'archived', 'created_at', 'updated_at', 'manual_reminder_date', 'reminder_mode',
   'manual_due_amount', 'dismissed_reminder_date', 'manual_reminder_anchor_day',
+  'collection_start_date', 'collection_baseline_paid',
 ];
 const paymentHeaders = [
   'id', 'customer_id', 'amount', 'payment_date', 'notes', 'created_at', 'contract_id',
@@ -161,6 +164,8 @@ describe('ترقية Sheets وسلامة العناوين', () => {
       'cancelled_at', 'paid_after', 'remaining_after', 'updated_at', 'edited_at', 'edit_reason',
     ]);
     expect(plan.find((item) => item.sheet === 'contracts')?.headers).toContain('manual_reminder_anchor_day');
+    expect(plan.find((item) => item.sheet === 'contracts')?.headers).toContain('collection_start_date');
+    expect(plan.find((item) => item.sheet === 'contracts')?.headers).toContain('collection_baseline_paid');
   });
 
   it('يقرأ payments مرة واحدة عند تحميل dashboard', () => {
@@ -777,5 +782,83 @@ describe('سيناريو Phase 1 في Apps Script', () => {
     expect(gas.restoreReminder_({ contract_id: first.id })).toMatchObject({ dismissed_reminder_date: '' });
     const currentAutomaticDue = gas.listContracts_().find((row) => row.id === first.id)?.next_due_date;
     expect(gas.clearManualReminderDate_({ contract_id: first.id })).toMatchObject({ reminder_mode: 'automatic', manual_reminder_date: '', manual_reminder_anchor_day: '', next_due_date: currentAutomaticDue });
+  });
+
+  it('يفصل التحصيل التشغيلي للعقد القديم ويدعم الجزئي والكامل والمقدم والمتعدد والنهاية', () => {
+    const customerRow = rowFrom(customerHeaders, { id: 91, name: 'عميل قديم', phone: '091' });
+    const customers = fakeSheet('customers', customerHeaders, [customerRow]);
+    const contracts = fakeSheet('contracts', contractHeaders);
+    const payments = fakeSheet('payments', paymentHeaders);
+    const gas = loadAppsScript({ customers: customers.sheet, contracts: contracts.sheet, payments: payments.sheet });
+    gas.today_ = () => '2026-10-26';
+
+    function legacyContract(requestSuffix: string) {
+      const created = gas.addContract_({
+        customer_id: 91, principal: 1_200_000, profit_percent: 0, installments: 10,
+        delivery_date: '2026-09-01', first_due_date: '2026-10-01',
+      });
+      gas.addPayment_({ contract_id: created.id, amount: 600_000, payment_date: '2026-10-20', request_id: `historical-${requestSuffix}` });
+      const before = gas.listContracts_().find((row) => row.id === created.id);
+      expect(before).toMatchObject({ paid_amount: 600_000, next_due_date: '2027-03-01' });
+      return gas.setCollectionBaseline_({ contract_id: created.id, collection_start_date: '2026-11-01' });
+    }
+
+    const partial = legacyContract('partial');
+    expect(partial).toMatchObject({ collection_baseline_paid: 600_000, operational_due_date: '2026-11-01', operational_due_amount: 120_000, next_due_date: '2027-03-01' });
+    const partialPayment = gas.addPayment_({ contract_id: partial.id, amount: 70_000, payment_date: '2026-10-26', request_id: 'operational-partial' });
+    expect(partialPayment.contract_after).toMatchObject({ operational_due_date: '2026-11-01', operational_due_amount: 50_000 });
+
+    const full = legacyContract('full');
+    expect(gas.addPayment_({ contract_id: full.id, amount: 120_000, payment_date: '2026-10-26', request_id: 'operational-full' }).contract_after)
+      .toMatchObject({ operational_due_date: '2026-12-01', operational_due_amount: 120_000 });
+
+    const advance = legacyContract('advance');
+    expect(gas.addPayment_({ contract_id: advance.id, amount: 150_000, payment_date: '2026-10-26', request_id: 'operational-advance' }).contract_after)
+      .toMatchObject({ operational_due_date: '2026-12-01', operational_due_amount: 90_000 });
+
+    const multi = legacyContract('multi');
+    expect(gas.addPayment_({ contract_id: multi.id, amount: 250_000, payment_date: '2026-10-26', request_id: 'operational-multi' }).contract_after)
+      .toMatchObject({ operational_due_date: '2027-01-01', operational_due_amount: 110_000 });
+
+    const finalContract = gas.addContract_({ customer_id: 91, principal: 1_200_000, profit_percent: 0, installments: 10, delivery_date: '2026-09-01', first_due_date: '2026-10-01' });
+    gas.addPayment_({ contract_id: finalContract.id, amount: 1_180_000, payment_date: '2026-10-20', request_id: 'historical-final' });
+    const finalBaseline = gas.setCollectionBaseline_({ contract_id: finalContract.id, collection_start_date: '2026-11-01' });
+    expect(finalBaseline).toMatchObject({ operational_due_date: '2026-11-01', operational_due_amount: 20_000 });
+    expect(gas.addPayment_({ contract_id: finalContract.id, amount: 20_000, payment_date: '2026-10-26', request_id: 'operational-final' }).contract_after)
+      .toMatchObject({ status: 'مكتمل', remaining_amount: 0, operational_due_date: '', operational_due_amount: 0 });
+  });
+
+  it('يحفظ إخفاء occurrence التشغيلي عبر إعادة القراءة ويبقيه للدفعة الجزئية فقط', () => {
+    const customers = fakeSheet('customers', customerHeaders, [rowFrom(customerHeaders, { id: 92, name: 'عميل تذكير' })]);
+    const contracts = fakeSheet('contracts', contractHeaders);
+    const payments = fakeSheet('payments', paymentHeaders);
+    const gas = loadAppsScript({ customers: customers.sheet, contracts: contracts.sheet, payments: payments.sheet });
+    gas.today_ = () => '2026-11-02';
+    const created = gas.addContract_({ customer_id: 92, principal: 1_200_000, profit_percent: 0, installments: 10, delivery_date: '2026-01-01', first_due_date: '2026-02-01' });
+    gas.addPayment_({ contract_id: created.id, amount: 600_000, payment_date: '2026-10-20', request_id: 'dismiss-history' });
+    gas.setCollectionBaseline_({ contract_id: created.id, collection_start_date: '2026-11-01' });
+    gas.addPayment_({ contract_id: created.id, amount: 70_000, payment_date: '2026-11-02', request_id: 'dismiss-partial-1' });
+
+    expect(gas.dismissReminder_({ contract_id: created.id, effective_due_date: '2026-11-01' }))
+      .toMatchObject({ dismissed_reminder_date: '2026-11-01', operational_due_date: '2026-11-01', operational_due_amount: 50_000 });
+    expect(gas.listContracts_().find((row) => row.id === created.id)).toMatchObject({ dismissed_reminder_date: '2026-11-01' });
+
+    const stillSame = gas.addPayment_({ contract_id: created.id, amount: 10_000, payment_date: '2026-11-02', request_id: 'dismiss-partial-2' });
+    expect(stillSame.contract_after).toMatchObject({ dismissed_reminder_date: '2026-11-01', operational_due_date: '2026-11-01', operational_due_amount: 40_000 });
+    const nextOccurrence = gas.addPayment_({ contract_id: created.id, amount: 40_000, payment_date: '2026-11-02', request_id: 'dismiss-complete' });
+    expect(nextOccurrence.contract_after).toMatchObject({ dismissed_reminder_date: '2026-11-01', operational_due_date: '2026-12-01', operational_due_amount: 120_000 });
+    expect(gas.restoreReminder_({ contract_id: created.id })).toMatchObject({ dismissed_reminder_date: '' });
+  });
+
+  it('لا يوهم بنجاح الإخفاء إذا كان Header الحفظ مفقوداً', () => {
+    const headersWithoutDismiss = contractHeaders.filter((header) => header !== 'dismissed_reminder_date');
+    const customers = fakeSheet('customers', customerHeaders, [rowFrom(customerHeaders, { id: 93, name: 'عميل' })]);
+    const contracts = fakeSheet('contracts', headersWithoutDismiss);
+    const payments = fakeSheet('payments', paymentHeaders);
+    const gas = loadAppsScript({ customers: customers.sheet, contracts: contracts.sheet, payments: payments.sheet });
+    gas.today_ = () => '2026-01-01';
+    const created = gas.addContract_({ customer_id: 93, principal: 1_000, profit_percent: 0, installments: 10, delivery_date: '2026-01-01', first_due_date: '2026-01-01' });
+    expect(() => gas.dismissReminder_({ contract_id: created.id, effective_due_date: '2026-01-01' }))
+      .toThrow('إخفاء التذكير غير متاح قبل إضافة الحقول المطلوبة');
   });
 });
