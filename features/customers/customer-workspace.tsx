@@ -138,11 +138,13 @@ export default function CustomerWorkspace(props: Props) {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="customer-list-workspace space-y-5">
       <div className="panel filter-panel customer-filter-panel">
         <label className="search-box"><Search size={18} /><input value={props.query} onChange={(event) => props.onQuery(event.target.value)} placeholder="ابحث بالاسم أو الهاتف..." /></label>
-        <div className="filter-pills customer-filter-tabs">{customerFilters.map((item) => <button type="button" key={item.id} className={customerFilter === item.id ? 'active' : ''} onClick={() => setCustomerFilter(item.id)}>{item.label}<b>{counts[item.id]}</b></button>)}</div>
-        <button type="button" className={customerFilter === 'archived' ? 'archive-filter-button active' : 'archive-filter-button'} onClick={() => setCustomerFilter(customerFilter === 'archived' ? 'all' : 'archived')}><Archive size={15} /> المؤرشفون <b>{counts.archived}</b></button>
+        <div className="customer-filter-bar">
+          <div className="filter-pills customer-filter-tabs">{customerFilters.map((item) => <button type="button" key={item.id} className={customerFilter === item.id ? 'active' : ''} onClick={() => setCustomerFilter(item.id)}>{item.label}<b>{counts[item.id]}</b></button>)}</div>
+          <button type="button" className={customerFilter === 'archived' ? 'archive-filter-button active' : 'archive-filter-button'} onClick={() => setCustomerFilter(customerFilter === 'archived' ? 'all' : 'archived')}><Archive size={15} /> المؤرشفون <b>{counts.archived}</b></button>
+        </div>
       </div>
       {filtered.length ? <div className="customer-list">{filtered.map((customer) => {
         const portfolio = portfoliosByCustomer.get(customer.id)!;
